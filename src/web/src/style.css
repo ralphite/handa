@@ -1,0 +1,427 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-sidebar: var(--sidebar);
+  --color-right-panel: var(--right-panel);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-border: var(--border);
+  --color-border-muted: var(--border-muted);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-faint-foreground: var(--faint-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+}
+
+@layer base {
+  :root {
+    --app-font-size: 14px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--app-font-size);
+    overflow: hidden;
+  }
+
+  button,
+  textarea {
+    font: inherit;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  * {
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .handa-tooltip {
+    position: fixed;
+    z-index: 120;
+    max-width: min(280px, calc(100vw - 16px));
+    padding: 6px 8px;
+    border: 1px solid color-mix(in srgb, var(--background) 20%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--foreground) 94%, var(--background));
+    box-shadow:
+      0 8px 22px rgb(0 0 0 / 0.18),
+      0 2px 8px rgb(0 0 0 / 0.12);
+    color: var(--background);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.35;
+    opacity: 0;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    transform: translateY(2px) scale(0.98);
+    transition:
+      opacity 80ms ease,
+      transform 80ms ease;
+  }
+
+  .handa-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .handa-tooltip[hidden] {
+    display: none;
+  }
+
+  .handa-tooltip__content {
+    position: relative;
+    z-index: 1;
+  }
+
+  .handa-tooltip__arrow {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: inherit;
+    transform: rotate(45deg);
+  }
+
+  .handa-tooltip[data-placement="top"] .handa-tooltip__arrow {
+    bottom: -4px;
+    left: var(--tooltip-arrow-x, 50%);
+    margin-left: -4px;
+  }
+
+  .handa-tooltip[data-placement="bottom"] .handa-tooltip__arrow {
+    top: -4px;
+    left: var(--tooltip-arrow-x, 50%);
+    margin-left: -4px;
+  }
+
+  .handa-tooltip[data-placement="left"] .handa-tooltip__arrow {
+    top: var(--tooltip-arrow-y, 50%);
+    right: -4px;
+    margin-top: -4px;
+  }
+
+  .handa-tooltip[data-placement="right"] .handa-tooltip__arrow {
+    top: var(--tooltip-arrow-y, 50%);
+    left: -4px;
+    margin-top: -4px;
+  }
+}
+
+@layer components {
+  .panel-header {
+    @apply flex shrink-0 items-center border-b;
+
+    height: 48px;
+    min-height: 48px;
+  }
+
+  .sidebar-action {
+    @apply -mx-3 flex h-8 w-[calc(100%+1.5rem)] items-center gap-2 rounded-none px-4 text-left text-[14px] transition focus:outline-none;
+
+    color: var(--text-secondary);
+  }
+
+  .sidebar-action:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .sidebar-label {
+    @apply mb-2 px-1 text-[13px] font-medium;
+
+    color: var(--text-faint);
+  }
+
+  .nav-icon {
+    @apply grid h-8 w-8 place-items-center rounded-md transition;
+
+    color: var(--text-secondary);
+  }
+
+  .nav-icon:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .icon-button {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-40;
+
+    color: var(--text-muted);
+  }
+
+  .icon-button:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .quiet-button {
+    @apply inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-3 text-[13px] font-medium transition;
+
+    border-color: var(--border-subtle);
+    color: var(--text-secondary);
+  }
+
+  .quiet-button:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .context-menu-item {
+    @apply flex h-8 w-full items-center gap-2 px-3 text-left transition focus:outline-none;
+  }
+
+  .context-menu-item:hover,
+  .context-menu-item:focus-visible {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .not-implemented-button {
+    cursor: not-allowed;
+  }
+
+  .send-button {
+    @apply grid h-8 w-8 place-items-center rounded-full transition;
+
+    background-color: var(--text-primary);
+    color: var(--app-bg);
+  }
+
+  .send-button:hover {
+    background-color: var(--accent);
+    color: var(--accent-contrast);
+  }
+
+  .send-button-stop:hover {
+    background-color: var(--destructive);
+    color: var(--app-bg);
+  }
+
+  .send-button:disabled {
+    background-color: var(--surface-active);
+    color: var(--text-faint);
+  }
+
+  .send-button-labeled {
+    @apply w-auto px-3.5 text-[13px] font-medium;
+  }
+
+  .markdown-body {
+    --ms-font-sans: var(--font-sans);
+
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .markdown-body > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-body > :last-child {
+    margin-bottom: 0;
+  }
+
+  .code-block {
+    @apply mb-6 mt-3 overflow-hidden rounded-md border;
+
+    border-color: var(--code-border);
+    background-color: var(--code-bg);
+  }
+
+  .code-toolbar {
+    @apply flex h-9 items-center justify-between border-b px-3 text-[12px];
+
+    border-color: var(--code-border);
+    color: var(--text-muted);
+  }
+
+  .code-toolbar-actions {
+    @apply flex shrink-0 items-center gap-1;
+  }
+
+  .code-toolbar-button {
+    @apply grid h-7 w-7 place-items-center rounded-md transition focus:outline-none focus-visible:ring-1;
+
+    color: inherit;
+  }
+
+  .code-toolbar-button:hover {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .code-block pre {
+    @apply overflow-x-auto px-4 py-4 font-mono text-[13px] leading-6;
+
+    color: var(--code-fg);
+  }
+
+  .code-block-wrap pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .code-block-wrap code {
+    white-space: inherit;
+    overflow-wrap: anywhere;
+  }
+
+  .code-block-nowrap pre {
+    white-space: pre;
+    overflow-wrap: normal;
+  }
+
+  .code-block-nowrap code {
+    white-space: inherit;
+    overflow-wrap: normal;
+  }
+
+  .highlighted-code-block {
+    --hljs-keyword: #ff7b72;
+    --hljs-string: #a5d6ff;
+    --hljs-title: #d2a8ff;
+    --hljs-attr: #79c0ff;
+    --hljs-number: #79c0ff;
+    --hljs-comment: #8b949e;
+    --hljs-meta: #ffa657;
+  }
+
+  .markstream-vue:not(.dark) .highlighted-code-block {
+    --hljs-keyword: #cf222e;
+    --hljs-string: #0a3069;
+    --hljs-title: #8250df;
+    --hljs-attr: #0550ae;
+    --hljs-number: #0550ae;
+    --hljs-comment: #6e7781;
+    --hljs-meta: #953800;
+  }
+
+  .highlighted-code-block code {
+    display: block;
+    color: var(--code-fg);
+  }
+
+  .highlighted-code-block .hljs-keyword,
+  .highlighted-code-block .hljs-selector-tag,
+  .highlighted-code-block .hljs-subst {
+    color: var(--hljs-keyword);
+  }
+
+  .highlighted-code-block .hljs-string,
+  .highlighted-code-block .hljs-regexp,
+  .highlighted-code-block .hljs-symbol,
+  .highlighted-code-block .hljs-bullet {
+    color: var(--hljs-string);
+  }
+
+  .highlighted-code-block .hljs-title,
+  .highlighted-code-block .hljs-section,
+  .highlighted-code-block .hljs-name {
+    color: var(--hljs-title);
+  }
+
+  .highlighted-code-block .hljs-attr,
+  .highlighted-code-block .hljs-attribute,
+  .highlighted-code-block .hljs-variable,
+  .highlighted-code-block .hljs-template-variable,
+  .highlighted-code-block .hljs-property {
+    color: var(--hljs-attr);
+  }
+
+  .highlighted-code-block .hljs-number,
+  .highlighted-code-block .hljs-literal,
+  .highlighted-code-block .hljs-type,
+  .highlighted-code-block .hljs-built_in,
+  .highlighted-code-block .hljs-builtin-name {
+    color: var(--hljs-number);
+  }
+
+  .highlighted-code-block .hljs-comment,
+  .highlighted-code-block .hljs-quote {
+    color: var(--hljs-comment);
+    font-style: italic;
+  }
+
+  .highlighted-code-block .hljs-meta,
+  .highlighted-code-block .hljs-doctag,
+  .highlighted-code-block .hljs-template-tag {
+    color: var(--hljs-meta);
+  }
+
+  .svg-render {
+    display: flex;
+    justify-content: center;
+  }
+
+  .svg-render svg {
+    max-width: 100%;
+    height: auto;
+  }
+}

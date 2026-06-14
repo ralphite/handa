@@ -1,0 +1,119 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { ChevronDown, ChevronRight, LoaderCircle } from '@lucide/vue'
+import AgentTimeline from './AgentTimeline.vue'
+import type { AgentSessionStatus, InvocationDetailEvent, InvocationTimelineItem, InvocationTokenUsage } from '../types'
+
+defineOptions({
+  name: 'AgentDetails',
+})
+
+const props = defineProps<{
+  elapsed: string
+  status: AgentSessionStatus
+  tokenUsage?: InvocationTokenUsage
+  events?: InvocationDetailEvent[]
+  timelineItems?: InvocationTimelineItem[]
+  markdownIsDark?: boolean
+  // When false, the live "Working for…" footer is omitted so the host can
+  // render it below the message body/form instead. Done-state header always shows.
+  showLiveSummary?: boolean
+}>()
+
+const showSummary = computed(() => !isLive.value || props.showLiveSummary !== false)
+
+const summaryPrefix = computed(() => {
+  if (props.status === 'cancelled') {
+    return `Terminated after ${props.elapsed}`
+  }
+  const label = props.status === 'queued'
+    ? 'Queued'
+    : props.status === 'running'
+      ? 'Working'
+      : 'Worked'
+  return `${label} for ${props.elapsed}`
+})
+
+const timelineItems = computed<(InvocationDetailEvent | InvocationTimelineItem)[]>(() => props.timelineItems ?? props.events ?? [])
+
+const isLive = computed(() => isLiveStatus(props.status))
+const hasTimelineItems = computed(() => timelineItems.value.length > 0)
+const isExpandable = computed(() => !isLive.value && hasTimelineItems.value)
+
+const detailsOpen = ref(false)
+
+function isLiveStatus(status: AgentSessionStatus) {
+  return status === 'running' || status === 'queued'
+}
+
+function toggleOpen() {
+  if (!isExpandable.value) return
+  detailsOpen.value = !detailsOpen.value
+}
+
+watch(
+  () => props.status,
+  (status) => {
+    detailsOpen.value = isLiveStatus(status)
+  },
+  { immediate: true },
+)
+</script>
+
+<template>
+  <div class="mb-2 flex flex-col">
+    <component
+      v-if="showSummary"
+      :is="isExpandable ? 'button' : 'div'"
+      :type="isExpandable ? 'button' : undefined"
+      class="select-none text-[13px] font-medium text-[color:var(--text-muted)] outline-none"
+      :class="[
+        isLive
+          ? ['order-2 inline-flex items-center gap-1.5', hasTimelineItems ? 'mt-3' : '']
+          : [
+              'order-1 flex w-full items-center gap-[9px] border-b border-[color:var(--border-muted)] pb-2 text-left',
+              isExpandable
+                ? 'cursor-pointer focus-visible:text-[color:var(--text-secondary)]'
+                : '',
+            ],
+      ]"
+      @click="toggleOpen"
+    >
+      <LoaderCircle v-if="isLive" aria-hidden="true" :size="14" class="animate-spin shrink-0" />
+      <span class="elapsed-summary" :class="{ 'elapsed-summary--stable': isLive }">{{ summaryPrefix }}</span>
+      <ChevronDown
+        v-if="isExpandable && detailsOpen"
+        aria-hidden="true"
+        :size="15"
+        class="elapsed-summary__chevron"
+      />
+      <ChevronRight
+        v-else-if="isExpandable"
+        aria-hidden="true"
+        :size="15"
+        class="elapsed-summary__chevron"
+      />
+    </component>
+    <AgentTimeline
+      v-if="hasTimelineItems && (isLive || detailsOpen)"
+      :timeline-items="timelineItems"
+      :is-live="isLive"
+      :markdown-is-dark="markdownIsDark"
+    />
+  </div>
+</template>
+
+<style scoped>
+.elapsed-summary {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+.elapsed-summary--stable {
+  min-width: 13ch;
+}
+
+.elapsed-summary__chevron {
+  flex: 0 0 auto;
+}
+</style>
