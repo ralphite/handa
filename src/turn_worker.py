@@ -4,7 +4,6 @@ import asyncio
 import os
 import signal
 import sys
-import time
 import traceback
 from typing import Any
 
@@ -21,72 +20,8 @@ from .runtime import load_task
 from .runtime import now_iso
 from .runtime import save_task
 from .contract.parent_runs import finalize_parent_agent_task
-from .contract.run_events import extract_event_facts
-from .contract.turn_trace import append_adk_trace_event
 from .contract.turn_trace import append_runtime_trace_event
 from .contract.turn_trace import append_web_step_event
-
-
-class _DeltaAggregator:
-  """Coalesces ADK streaming text deltas before tracing them.
-
-  The FE appends delta text in arrival order, so chunks must never be dropped;
-  they are merged and flushed on a time/size threshold instead. This caps the
-  per-token write amplification (one JSONL line + one sqlite row per chunk)
-  at roughly one write per flush interval.
-  """
-
-  def __init__(
-      self,
-      append: Any,
-      *,
-      flush_interval_seconds: float = 0.5,
-      flush_min_chars: int = 200,
-  ) -> None:
-    self._append = append
-    self._flush_interval = flush_interval_seconds
-    self._flush_min_chars = flush_min_chars
-    self._buffer: list[str] = []
-    self._last_event: Any = None
-    self._last_flush = time.monotonic()
-
-  def add(self, event: Any) -> None:
-    facts = extract_event_facts(event)
-    if facts.function_calls or facts.function_responses:
-      # Structured partials (streaming tool calls) are rare and not safe to
-      # merge; trace them as-is.
-      self.flush()
-      self._append(event)
-      return
-    if facts.text:
-      self._buffer.append(facts.text)
-      self._last_event = event
-    if not self._buffer:
-      return
-    buffered_chars = sum(len(chunk) for chunk in self._buffer)
-    if (
-        buffered_chars >= self._flush_min_chars
-        or time.monotonic() - self._last_flush >= self._flush_interval
-    ):
-      self.flush()
-
-  def flush(self) -> None:
-    self._last_flush = time.monotonic()
-    if not self._buffer or self._last_event is None:
-      return
-    merged = "".join(self._buffer)
-    self._buffer = []
-    last = self._last_event
-    self._last_event = None
-    self._append(
-        {
-            "id": str(getattr(last, "id", "") or ""),
-            "author": getattr(last, "author", None),
-            "partial": True,
-            "timestamp": getattr(last, "timestamp", None),
-            "content": {"parts": [{"text": merged}]},
-        }
-    )
 
 
 def _configure_environment() -> None:
@@ -120,25 +55,7 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
   )
   _set_active_turn_id(services, session_id, turn_id)
 
-  deltas = _DeltaAggregator(
-      lambda event: append_adk_trace_event(
-          storage_root,
-          session_id=session_id,
-          turn_id=turn_id,
-          event=event,
-      )
-  )
-
   async def on_event(event: Any) -> None:
-    if agent_runtime == "adk":
-      # Non-partial ADK events are persisted to the adk stream by the session
-      # service before the runner yields them; only streaming deltas need
-      # tracing here, coalesced to keep the write rate bounded.
-      if bool(getattr(event, "partial", False)):
-        deltas.add(event)
-      else:
-        deltas.flush()
-      return
     append_runtime_trace_event(
         storage_root,
         session_id=session_id,
@@ -167,18 +84,6 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
       # Terminate raced the run's completion; the cancel must stick.
       return 1
     if outcome.pending_user_input is not None:
-      if agent_runtime == "adk":
-        # The langgraph runtime emits its own langgraph.user_input_requested
-        # trace event (projected to the same step shape); only ADK needs the
-        # web-side step, otherwise the timeline shows the prompt twice.
-        append_web_step_event(
-            storage_root,
-            session_id=session_id,
-            turn_id=turn_id,
-            kind="user_input_requested",
-            summary="Waiting for user input",
-            payload={"pending_user_input": outcome.pending_user_input},
-        )
       task["status"] = "waiting"
       task["pending_user_input"] = outcome.pending_user_input
       task["resume_user_input"] = None

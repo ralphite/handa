@@ -5,7 +5,6 @@ import asyncio
 import re
 
 from google.genai import types
-from google.adk.events import Event
 
 from src.storage import HandaArtifactService
 from src.storage import HandaSessionService
@@ -53,16 +52,17 @@ async def _assert_session_service_stores_events_in_runtime_jsonl(tmp_path):
       state={"handa:active_turn_id": "turn-1"},
       session_id="session-1",
   )
-  event = Event(
-      invocation_id="runtime-turn-1",
-      author="agent",
-      content=types.Content(parts=[types.Part(text="hello")]),
-  )
+  event = {
+      "id": "event-1",
+      "invocation_id": "runtime-turn-1",
+      "author": "agent",
+      "content": {"parts": [{"text": "hello"}]},
+  }
 
   await service.append_event(session, event)
 
   session_file = root / "sessions" / "session-1" / "session.json"
-  trace_file = root / "sessions" / "session-1" / "runtime" / "adk" / "events.jsonl"
+  trace_file = root / "sessions" / "session-1" / "runtime" / "native" / "events.jsonl"
   stored_session = json.loads(session_file.read_text(encoding="utf-8"))
   trace = json.loads(trace_file.read_text(encoding="utf-8").splitlines()[0])
   loaded = await service.get_session(
@@ -77,8 +77,7 @@ async def _assert_session_service_stores_events_in_runtime_jsonl(tmp_path):
   assert trace["id"] == trace["event"]["id"]
   assert trace["event"]["author"] == "agent"
   assert loaded is not None
-  assert len(loaded.events) == 1
-  assert loaded.events[0].invocation_id == "runtime-turn-1"
+  assert loaded.events == []
 
 
 def test_session_truncate_rewinds_native_orca_history(tmp_path):

@@ -3,11 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.api.presenters.artifact_presenter import present_artifact
-from src.api.presenters.event_presenter import project_adk_event
+from src.api.presenters.event_presenter import project_model_event
 from src.api.presenters.tool_summary import summarize_tool_response
 
 
-def test_project_adk_event_summarizes_tool_call():
+def test_project_model_event_summarizes_tool_call():
   event = SimpleNamespace(
       id="event-1",
       invocation_id="inv-1",
@@ -37,7 +37,7 @@ def test_project_adk_event_summarizes_tool_call():
       is_final_response=lambda: False,
   )
 
-  projected = project_adk_event(event)
+  projected = project_model_event(event)
 
   assert projected == [
       {
@@ -65,7 +65,7 @@ def test_present_artifact_uses_user_facing_title_for_versioned_names():
   assert typed.display_version == 2
 
 
-def test_project_adk_event_does_not_project_user_text_as_agent_text():
+def test_project_model_event_does_not_project_user_text_as_agent_text():
   event = SimpleNamespace(
       id="event-1",
       invocation_id="inv-1",
@@ -89,12 +89,12 @@ def test_project_adk_event_does_not_project_user_text_as_agent_text():
       is_final_response=lambda: False,
   )
 
-  projected = project_adk_event(event)
+  projected = project_model_event(event)
 
   assert projected == [
       {
-          "kind": "adk_event",
-          "summary": "ADK event",
+          "kind": "model_event",
+          "summary": "Model event",
           "payload": {
               "author": "user",
               "partial": False,
@@ -131,7 +131,7 @@ def test_summarize_tool_response_marks_top_level_failure_as_failed():
   )
 
 
-def test_project_adk_event_keeps_successful_status_read_as_ok():
+def test_project_model_event_keeps_successful_status_read_as_ok():
   event = SimpleNamespace(
       id="event-2",
       invocation_id="inv-1",
@@ -169,32 +169,31 @@ def test_project_adk_event_keeps_successful_status_read_as_ok():
       is_final_response=lambda: False,
   )
 
-  projected = project_adk_event(event)
+  projected = project_model_event(event)
 
   assert projected[0]["kind"] == "tool_response"
   assert projected[0]["summary"] == "Finished agents_get_run_status"
 
 
-def test_project_adk_event_drops_empty_partial_markers():
+def test_project_model_event_drops_empty_partial_markers():
   event = SimpleNamespace(
       id="evt-empty",
-      author="orca_adk",
+      author="orca",
       partial=True,
       content=SimpleNamespace(parts=[]),
       actions=SimpleNamespace(artifact_delta={}),
       is_final_response=lambda: False,
   )
 
-  assert project_adk_event(event) == []
+  assert project_model_event(event) == []
 
 
 def test_project_runtime_event_drops_lifecycle_kinds():
   from src.api.presenters.runtime_event_presenter import project_runtime_event
 
   for runtime, kind in (
-      ("langgraph", "langgraph.started"),
-      ("langgraph", "langgraph.checkpoint"),
       ("native", "orca.started"),
+      ("native", "orca.checkpoint"),
       ("native", "browser.started"),
       ("native", "browser.history_boundary"),
       ("native", "ralph.started"),
@@ -204,11 +203,6 @@ def test_project_runtime_event_drops_lifecycle_kinds():
 
 
 _QUOTA_ERROR_MESSAGE = """
-On how to mitigate this issue, please refer to:
-
-https://google.github.io/adk-docs/agents/models/google-gemini/#error-code-429-resource_exhausted
-
-
 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details.', 'status': 'RESOURCE_EXHAUSTED'}}
 """
 
@@ -231,10 +225,10 @@ def test_summarize_error_falls_back_to_code_then_fallback():
   assert summarize_error(None, long_line) == f"{'x' * 137}..."
 
 
-def test_project_adk_event_uses_short_error_summary_with_full_payload():
+def test_project_model_event_uses_short_error_summary_with_full_payload():
   event = SimpleNamespace(
       id="evt-err",
-      author="orca_adk",
+      author="orca",
       partial=False,
       interrupted=False,
       error_code="_ResourceExhaustedError",
@@ -244,7 +238,7 @@ def test_project_adk_event_uses_short_error_summary_with_full_payload():
       is_final_response=lambda: True,
   )
 
-  projected = project_adk_event(event)
+  projected = project_model_event(event)
 
   assert projected[-1]["kind"] == "error"
   assert projected[-1]["summary"] == "429 RESOURCE_EXHAUSTED."
@@ -260,12 +254,12 @@ def test_project_runtime_event_uses_short_error_summary():
 
   event = {
       "id": "evt-err",
-      "kind": "langgraph.error",
+      "kind": "orca.error",
       "summary": _QUOTA_ERROR_MESSAGE,
       "payload": {"message": _QUOTA_ERROR_MESSAGE},
   }
 
-  projected = project_runtime_event(event, runtime="langgraph")
+  projected = project_runtime_event(event, runtime="native")
 
   assert projected[0]["kind"] == "error"
   assert projected[0]["summary"] == "429 RESOURCE_EXHAUSTED."

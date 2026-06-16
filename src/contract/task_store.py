@@ -462,7 +462,7 @@ def build_agent_run_report(task: dict[str, Any], final_text: str) -> str:
       f"- child_session_id: `{task['child_session_id']}`",
       f"- status: `{task['status']}`",
       f"- kind: `{task['kind']}`",
-      f"- runtime: `{task.get('agent_runtime', 'adk')}`",
+      f"- runtime: `{task.get('agent_runtime', 'native')}`",
       "",
       "## Prompt",
       "",

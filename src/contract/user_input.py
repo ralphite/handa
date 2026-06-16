@@ -1,10 +1,4 @@
-"""Shared schema and validation for the `request_user_input` control-flow tool.
-
-Both agent runtimes (LangGraph interrupt, ADK long-running tool) expose the
-same model-facing tool and persist the same pending payload in session state,
-so the Web layer can render the form and route answers without knowing which
-runtime is paused.
-"""
+"""Shared schema and validation for the `request_user_input` control-flow tool."""
 
 from __future__ import annotations
 
@@ -90,11 +84,7 @@ def build_pending_request(
     request_id: str | None = None,
     function_call_id: str | None = None,
 ) -> dict[str, Any]:
-  """Build the payload stored under PENDING_USER_INPUT_STATE_KEY.
-
-  `function_call_id` is required for the ADK runtime: the resume path must
-  pair the answer FunctionResponse with the original FunctionCall id.
-  """
+  """Build the payload stored under PENDING_USER_INPUT_STATE_KEY."""
   pending: dict[str, Any] = {
       "request_id": request_id or new_request_id(),
       "runtime": runtime,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from src.run_events import extract_event_facts
-from src.run_events import serialize_adk_event
+from src.run_events import serialize_event
 
 
 def test_extract_event_facts_reads_text_tool_and_artifact_delta():
@@ -66,18 +66,17 @@ def test_extract_event_facts_reads_usage_metadata_token_counts():
   assert facts.output_token_count == 56
 
 
-def test_serialize_adk_event_handles_plain_objects():
+def test_serialize_event_handles_plain_objects():
   event = SimpleNamespace(id="event-1", nested=SimpleNamespace(value=1))
 
-  assert serialize_adk_event(event) == {"id": "event-1", "nested": {"value": 1}}
+  assert serialize_event(event) == {"id": "event-1", "nested": {"value": 1}}
 
 
-def _real_adk_event():
-  from google.adk.events.event import Event
-  from google.adk.events.event_actions import EventActions
+def _model_event():
   from google.genai import types
 
-  return Event(
+  return SimpleNamespace(
+      id="event-1",
       invocation_id="inv-1",
       author="handa",
       content=types.Content(
@@ -93,34 +92,35 @@ def _real_adk_event():
           candidates_token_count=5,
           total_token_count=15,
       ),
-      actions=EventActions(artifact_delta={"plan.md": 1}),
+      actions=SimpleNamespace(artifact_delta={"plan.md": 1}),
+      is_final_response=lambda: True,
   )
 
 
 def test_extract_event_facts_matches_between_object_and_serialized_dict():
-  event = _real_adk_event()
+  event = _model_event()
 
-  assert extract_event_facts(serialize_adk_event(event)) == extract_event_facts(event)
+  assert extract_event_facts(serialize_event(event)) == extract_event_facts(event)
 
 
-def test_serialize_adk_event_persists_finality_for_dict_facts():
-  from google.adk.events.event import Event
+def test_serialize_event_persists_finality_for_dict_facts():
   from google.genai import types
 
-  event = Event(
+  event = SimpleNamespace(
       invocation_id="inv-1",
       author="handa",
       content=types.Content(role="model", parts=[types.Part(text="done")]),
+      is_final_response=lambda: True,
   )
   assert event.is_final_response() is True
 
-  raw = serialize_adk_event(event)
+  raw = serialize_event(event)
 
   assert raw["is_final_response"] is True
   assert extract_event_facts(raw).final is True
 
 
-def test_serialize_adk_event_returns_dict_input_unchanged():
+def test_serialize_event_returns_dict_input_unchanged():
   raw = {"id": "event-1", "kind": "web.turn_cancelled"}
 
-  assert serialize_adk_event(raw) is raw
+  assert serialize_event(raw) is raw

@@ -18,8 +18,8 @@ def build_message_parts(
 
   Images and PDFs are forwarded as binary ``inline_data`` so the model can see
   them; text files are inlined as text; other binaries fall back to inline data
-  or, failing that, a textual reference. Shared by the ADK and LangGraph
-  runtimes so both deliver identical multimodal input to the model.
+  or, failing that, a textual reference. Shared by native agent entry points so
+  they deliver identical multimodal input to the model.
   """
   parts: list[types.Part] = []
   if input_text:

@@ -7,11 +7,9 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from ..contract.introspection import read_tool_definitions
-from ..contract.product import ADK_AGENTS_DIR
 from ..contract.product import AgentConfig
 from ..contract.product import agent_config_artifact_filename
 from ..contract.product import BROWSER_MAIN_CONFIG_PATH
-from ..contract.product import LANGGRAPH_MAIN_CONFIG_PATH
 from ..contract.product import ORCA_MAIN_CONFIG_PATH
 from ..contract.product import RALPH_MAIN_CONFIG_PATH
 from ..contract.product import load_agent_config_from_path
@@ -19,14 +17,12 @@ from ..contract.product import render_instruction
 from ..contract.product import render_project_agents_instruction
 from ..contract.product import render_skill_instructions
 from ..contract.run_events import extract_event_facts
-from ..contract.run_events import serialize_adk_event
 from ..contract.services import APP_NAME
 from ..contract.storage import RuntimeEventStore
 
 if TYPE_CHECKING:
-  from google.adk.sessions.session import Session
-
   from .context import WebApiContext
+  from ..storage.session_service import Session
 
 
 BREAKDOWN_CATEGORIES = (
@@ -55,17 +51,6 @@ RESIDUAL_SOURCE_KEYS = ("user_messages", "tool_call_responses", "llm_responses")
 DENSE_JSON_SOURCE_KEYS = frozenset({"llm_response_tool_call_request", "tool_call_responses"})
 PROSE_CHARS_PER_TOKEN = 4.0
 JSON_CHARS_PER_TOKEN = 3.5
-RUNTIME_TOOL_RESULT_KINDS = frozenset({
-    "langgraph.tool_result",
-    "langgraph.user_input_result",
-    "orca.tool_result",
-    "orca.user_input_result",
-    "browser.tool_result",
-    "browser.user_input_result",
-    "ralph.tool_result",
-    "ralph.user_input_result",
-})
-NATIVE_RUNTIME_EVENT_PREFIXES = frozenset({"orca", "browser", "ralph"})
 _CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 
 
@@ -297,12 +282,6 @@ def load_agent_config_for_runtime(
     return load_agent_config_from_path(BROWSER_MAIN_CONFIG_PATH)
   if agent_runtime == "native" and agent_id == "ralph":
     return load_agent_config_from_path(RALPH_MAIN_CONFIG_PATH)
-  if agent_runtime == "langgraph" and agent_id in {"orca", "orca_langgraph"}:
-    return load_agent_config_from_path(LANGGRAPH_MAIN_CONFIG_PATH)
-  if agent_runtime == "adk":
-    config_path = ADK_AGENTS_DIR / agent_id / f"{agent_id}.agent.json"
-    if config_path.is_file():
-      return load_agent_config_from_path(config_path)
   return None
 
 
@@ -353,58 +332,52 @@ def _llm_response_text(
   texts: list[str] = []
   for turn in ctx.db.list_turns_for_session(session.id):
     _append_unique(texts, turn.get("final_text"))
-  if agent_runtime == "adk":
-    for event in session.events or []:
-      facts = extract_event_facts(event)
-      if not _is_user_author(facts.author):
-        _append_unique(texts, facts.text)
-  else:
-    for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
-      kind = str(raw_event.get("kind") or "")
-      payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
-      if kind in _runtime_kinds("model_text") or kind == "agent_text":
-        _append_unique(texts, payload.get("text"))
+  for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
+    facts = extract_event_facts(raw_event)
+    if facts.text and not _is_user_author(facts.author):
+      _append_unique(texts, facts.text)
+      continue
+    kind = str(raw_event.get("kind") or "")
+    payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
+    if _is_runtime_kind(kind, "model_text") or kind == "agent_text":
+      _append_unique(texts, payload.get("text"))
   return "\n\n".join(text for text in texts if text)
 
 
 def _tool_call_request_text(
     ctx: WebApiContext,
     session: Session,
-    agent_runtime: str,
+  agent_runtime: str,
 ) -> str:
   chunks: list[str] = []
-  if agent_runtime == "adk":
-    for event in session.events or []:
-      facts = extract_event_facts(event)
-      for call in facts.function_calls:
-        chunks.append(_tool_call_text(call.name, call.args))
-  else:
-    for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
-      if str(raw_event.get("kind") or "") not in _runtime_kinds("tool_call"):
-        continue
-      payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
-      args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
-      chunks.append(_tool_call_text(str(payload.get("name") or ""), args))
+  for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
+    facts = extract_event_facts(raw_event)
+    for call in facts.function_calls:
+      chunks.append(_tool_call_text(call.name, call.args))
+    kind = str(raw_event.get("kind") or "")
+    if not _is_runtime_kind(kind, "tool_call"):
+      continue
+    payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
+    args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
+    chunks.append(_tool_call_text(str(payload.get("name") or ""), args))
   return "\n\n".join(chunk for chunk in chunks if chunk)
 
 
 def _tool_call_response_text(
     ctx: WebApiContext,
     session: Session,
-    agent_runtime: str,
+  agent_runtime: str,
 ) -> str:
   chunks: list[str] = []
-  if agent_runtime == "adk":
-    for event in session.events or []:
-      facts = extract_event_facts(event)
-      for response in facts.function_responses:
-        chunks.append(_tool_response_text(response.name, response.response))
-  else:
-    for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
-      if str(raw_event.get("kind") or "") not in RUNTIME_TOOL_RESULT_KINDS:
-        continue
-      payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
-      chunks.append(_tool_response_text(str(payload.get("name") or ""), payload.get("result")))
+  for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
+    facts = extract_event_facts(raw_event)
+    for response in facts.function_responses:
+      chunks.append(_tool_response_text(response.name, response.response))
+    kind = str(raw_event.get("kind") or "")
+    if not (_is_runtime_kind(kind, "tool_result") or _is_runtime_kind(kind, "user_input_result")):
+      continue
+    payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
+    chunks.append(_tool_response_text(str(payload.get("name") or ""), payload.get("result")))
   return "\n\n".join(chunk for chunk in chunks if chunk)
 
 
@@ -415,11 +388,9 @@ def _llm_response_thought_tokens(
 ) -> int:
   """Thoughts still occupying the live context window.
 
-  Thought signatures replay thinking into every later request's prompt — across
-  tool-loop steps and across turns (verified by prompt-delta analysis of
-  recorded usage metadata on both the ADK and LangGraph runtimes). Only the
-  final response's thoughts are not in a prompt yet, because the context size
-  shown is the latest request's prompt count, so they are excluded.
+  Thought signatures replay thinking into every later request's prompt. Only
+  the final response's thoughts are not in a prompt yet, because the context
+  size shown is the latest request's prompt count, so they are excluded.
   """
   per_event: list[int] = []
   for raw_event in _usage_raw_events(ctx, session, agent_runtime):
@@ -453,8 +424,6 @@ def _usage_raw_events(
     session: Session,
     runtime: str,
 ) -> list[dict[str, Any]]:
-  if runtime == "adk":
-    return [serialize_adk_event(event) for event in session.events]
   return _runtime_raw_events(ctx, session, runtime)
 
 
@@ -487,11 +456,8 @@ def _tool_response_text(name: str, response: Any) -> str:
   return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
 
-def _runtime_kinds(suffix: str) -> frozenset[str]:
-  return frozenset({
-      f"langgraph.{suffix}",
-      *(f"{prefix}.{suffix}" for prefix in NATIVE_RUNTIME_EVENT_PREFIXES),
-  })
+def _is_runtime_kind(kind: str, suffix: str) -> bool:
+  return kind.endswith(f".{suffix}")
 
 
 def _is_user_author(author: str | None) -> bool:

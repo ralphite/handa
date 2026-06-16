@@ -7,48 +7,13 @@ from typing import Any
 from ..contract.run_events import extract_event_facts
 from ..contract.storage import runtime_events_path
 from ..contract.storage import session_dir
-from ..contract.turn_trace import append_adk_trace_event
 from ..contract.turn_trace import append_runtime_trace_event
 from ..contract.turn_trace import append_web_step_event
 from ..contract.turn_trace import WEB_EVENT_KIND_PREFIX
 from ..contract.turn_trace import WEB_TRACE_RUNTIME
 from .context import WebApiContext
-from .presenters.event_presenter import project_adk_event
 from .presenters.runtime_event_presenter import project_runtime_event
 from .presenters.tool_summary import response_indicates_failed_outcome
-
-
-def record_adk_event(
-    ctx: WebApiContext,
-    *,
-    session_id: str,
-    turn_id: str,
-    event: Any,
-) -> None:
-  """Ingest one ADK runner event into web steps.
-
-  Non-partial events are already persisted to the "adk" stream by
-  HandaSessionService.append_event (the ADK runner appends before yielding), so
-  they only need ingesting. Partial streaming deltas never reach the session
-  service and are traced into the web stream instead.
-  """
-  if not bool(getattr(event, "partial", False)):
-    ingest_session_events(ctx, session_id=session_id, runtime="adk")
-    event_id = _optional_str(
-        event.get("id") if isinstance(event, dict) else getattr(event, "id", None)
-    )
-    if event_id and ctx.db.has_step(event_id):
-      return
-    # The runner did not persist this event into the adk stream (stub runtimes,
-    # or it landed without our turn id). Fall through and trace it ourselves so
-    # the step still materializes.
-  append_adk_trace_event(
-      ctx.settings.storage_root,
-      session_id=session_id,
-      turn_id=turn_id,
-      event=event,
-  )
-  ingest_session_events(ctx, session_id=session_id, runtime=WEB_TRACE_RUNTIME)
 
 
 def record_runtime_event(
@@ -104,9 +69,8 @@ def ingest_session_streams(
   """Ingest the session's runtime stream plus the web trace stream.
 
   New envelopes from both streams are merged by event time before
-  materializing: a worker writes ADK finals to the adk stream and streaming
-  deltas to the web stream, so consuming the streams one after the other would
-  order finals ahead of their deltas.
+  materializing, so consuming runtime and web streams one after the other does
+  not reorder closely spaced lifecycle and agent events.
   """
   streams = [runtime]
   if runtime != WEB_TRACE_RUNTIME:
@@ -243,9 +207,9 @@ def _collect_new_envelopes(
 def _event_sort_key(envelope: dict[str, Any]) -> float:
   """Epoch seconds for cross-stream merge ordering.
 
-  The adk stream stamps envelopes with the event's float timestamp while the
-  web stream uses ISO strings; normalize both so merged ingestion follows
-  event time. Unparseable values sort first, preserving stream order.
+  Runtime streams may stamp envelopes with either float timestamps or ISO
+  strings; normalize both so merged ingestion follows event time. Unparseable
+  values sort first, preserving stream order.
   """
   raw = envelope.get("created_at")
   if raw is None:
@@ -288,9 +252,9 @@ def _ingest_envelope(
 
   # Each projection from one runtime event becomes its own top-level step, so a
   # tool call/response pair (or a tool_response + artifact_delta carried in one
-  # ADK event) never hides inside a sibling's payload. The base event id keys
-  # the first step; extras take a deterministic `#index` suffix so a cursor
-  # rewind re-ingests to the same ids (and dedupes by id).
+  # event) never hides inside a sibling's payload. The base event id keys the
+  # first step; extras take a deterministic `#index` suffix so a cursor rewind
+  # re-ingests to the same ids (and dedupes by id).
   base_inserted = False
   any_inserted = False
   for index, projection in enumerate(projections):
@@ -342,14 +306,11 @@ def _project(raw_event: dict[str, Any], *, runtime: str) -> list[dict[str, Any]]
             "payload": payload if isinstance(payload, dict) else {},
         }
     ]
-  if runtime in ("adk", WEB_TRACE_RUNTIME):
-    # User-authored events are conversation history the runner persists on its
-    # own (the turn input, resumed tool responses); the on_event callback never
-    # yielded them, so they have no step counterpart.
+  if runtime == WEB_TRACE_RUNTIME and not kind:
+    # User-authored legacy model events are conversation history with no step
+    # counterpart.
     if str(raw_event.get("author") or "").strip().lower() == "user":
       return []
-    # The web trace stream's non-web.* entries are ADK partial deltas.
-    return project_adk_event(raw_event)
   return project_runtime_event(raw_event, runtime=runtime)
 
 
@@ -360,14 +321,12 @@ def _usage_counts(
 ) -> dict[str, int] | None:
   if str(raw_event.get("kind") or "").startswith(WEB_EVENT_KIND_PREFIX):
     return None
-  if runtime in ("adk", WEB_TRACE_RUNTIME):
-    facts = extract_event_facts(raw_event)
-    if (
-        facts.input_token_count == 0
-        and facts.output_token_count == 0
-        and facts.total_token_count == 0
-    ):
-      return None
+  facts = extract_event_facts(raw_event)
+  if (
+      facts.input_token_count > 0
+      or facts.output_token_count > 0
+      or facts.total_token_count > 0
+  ):
     return {
         "input_token_count": facts.input_token_count,
         "output_token_count": facts.output_token_count,
@@ -381,9 +340,9 @@ def _activity_counts(
 ) -> dict[str, int] | None:
   """Tool-call and file-change counters from one event's projected steps.
 
-  Both runtimes normalize tool activity into `tool_response` steps carrying the
-  tool name and response, so counting from projections works uniformly. A
-  completed call counts as success unless its response signals a failed
+  Runtime projection normalizes tool activity into `tool_response` steps
+  carrying the tool name and response, so counting from projections works
+  uniformly. A completed call counts as success unless its response signals a failed
   outcome; a command's duration and a file edit's line deltas ride on the
   response. Returns None when the event contributed no tool activity.
   """

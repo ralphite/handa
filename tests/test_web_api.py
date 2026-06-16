@@ -8,7 +8,6 @@ import sqlite3
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from google.adk.events import Event
 from google.genai import types
 
 from src.model_configs import DEFAULT_MODEL_CONFIG_ID
@@ -27,6 +26,7 @@ from src.runtime import task_result_file
 from src.storage.paths import browser_dir
 from src.storage.paths import browser_screenshot_path
 from src.storage.paths import browser_state_path
+from src.storage.runtime_event_store import RuntimeEventStore
 from src.api.background_task_manager import BackgroundTaskManager
 from src.api.turn_queue import dispatch_next_queued_turn
 from turn_test_helpers import execute_turn
@@ -52,11 +52,11 @@ def test_web_api_health_and_session_creation(tmp_path, monkeypatch):
   ).json()
   created = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   listed = client.get("/api/sessions").json()
 
-  assert created["agent_id"] == "orca_adk"
+  assert created["agent_id"] == "orca"
   assert created["id"] in [session["id"] for session in listed]
 
 
@@ -76,7 +76,7 @@ def test_web_api_session_creation_defaults_to_orca(tmp_path, monkeypatch):
   assert created["agent_runtime"] == "native"
 
 
-def test_web_api_session_list_hides_missing_adk_sessions(tmp_path, monkeypatch):
+def test_web_api_session_list_hides_missing_storage_sessions(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   project = tmp_path / "project"
   project.mkdir()
@@ -87,12 +87,12 @@ def test_web_api_session_list_hides_missing_adk_sessions(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   valid = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   app.state.web_context.db.create_session(
       session_id="orphan-meta",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="orphan",
   )
 
@@ -114,7 +114,7 @@ def test_web_api_forks_session_from_completed_turn(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   ctx.db.update_session_title(source["id"], "Investigate UI affordance", source="manual")
@@ -162,11 +162,12 @@ def test_web_api_forks_session_from_completed_turn(tmp_path, monkeypatch):
   asyncio.run(
       ctx.services.session_service.append_event(
           session,
-          Event(
-              invocation_id="runtime-first",
-              author="agent",
-              content=types.Content(parts=[types.Part(text="Use the branch icon.")]),
-          ),
+          {
+              "id": "event-runtime-first",
+              "invocation_id": "runtime-first",
+              "author": "agent",
+              "content": {"parts": [{"text": "Use the branch icon."}]},
+          },
       )
   )
   asyncio.run(
@@ -220,8 +221,13 @@ def test_web_api_forks_session_from_completed_turn(tmp_path, monkeypatch):
   assert "handa:automated_task_id" not in fork_session.state
   assert "handa:automated_task_run_id" not in fork_session.state
   assert "handa:trigger_kind" not in fork_session.state
-  assert len(fork_session.events) == 1
-  assert fork_session.events[0].invocation_id == "runtime-first"
+  fork_events = RuntimeEventStore(storage_root).list_events(
+      session_id=forked["id"],
+      runtime="native",
+  )
+  assert [event["event"]["invocation_id"] for event in fork_events] == [
+      "runtime-first"
+  ]
   assert fork_artifacts == source_artifacts
 
 
@@ -236,7 +242,7 @@ def test_web_api_rejects_fork_from_running_turn(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   running = app.state.web_context.db.create_turn(
       session_id=source["id"],
@@ -265,7 +271,7 @@ def test_web_api_forks_session_before_source_turn(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   first = ctx.db.create_turn(
@@ -288,11 +294,12 @@ def test_web_api_forks_session_before_source_turn(tmp_path, monkeypatch):
   asyncio.run(
       ctx.services.session_service.append_event(
           session,
-          Event(
-              invocation_id="runtime-first",
-              author="agent",
-              content=types.Content(parts=[types.Part(text="Kept.")]),
-          ),
+          {
+              "id": "event-runtime-first",
+              "invocation_id": "runtime-first",
+              "author": "agent",
+              "content": {"parts": [{"text": "Kept."}]},
+          },
       )
   )
 
@@ -307,8 +314,13 @@ def test_web_api_forks_session_before_source_turn(tmp_path, monkeypatch):
   assert [turn["input_text"] for turn in cloned_turns] == ["Keep this."]
   assert forked["forked_from_turn_id"] == second["id"]
   assert fork_session is not None
-  assert len(fork_session.events) == 1
-  assert fork_session.events[0].invocation_id == "runtime-first"
+  fork_events = RuntimeEventStore(storage_root).list_events(
+      session_id=forked["id"],
+      runtime="native",
+  )
+  assert [event["event"]["invocation_id"] for event in fork_events] == [
+      "runtime-first"
+  ]
 
 
 def test_web_api_rewrite_truncates_session_and_reuses_attachments(
@@ -333,7 +345,7 @@ def test_web_api_rewrite_truncates_session_and_reuses_attachments(
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   first = ctx.db.create_turn(
@@ -381,11 +393,12 @@ def test_web_api_rewrite_truncates_session_and_reuses_attachments(
     asyncio.run(
         ctx.services.session_service.append_event(
             session,
-            Event(
-                invocation_id=text,
-                author="agent",
-                content=types.Content(parts=[types.Part(text=text)]),
-            ),
+            {
+                "id": f"event-{text}",
+                "invocation_id": text,
+                "author": "agent",
+                "content": {"parts": [{"text": text}]},
+            },
         )
     )
   asyncio.run(
@@ -436,7 +449,13 @@ def test_web_api_rewrite_truncates_session_and_reuses_attachments(
   assert cloned_attachments[0]["id"] != attachment["id"]
   assert cloned_attachments[0]["storage_path"] == attachment["storage_path"]
   assert session is not None
-  assert [event.invocation_id for event in session.events] == ["runtime-first"]
+  runtime_events = RuntimeEventStore(storage_root).list_events(
+      session_id=source["id"],
+      runtime="native",
+  )
+  assert [event["event"]["invocation_id"] for event in runtime_events] == [
+      "runtime-first"
+  ]
   assert any(name.startswith("first.v1.plan.md") for name in artifacts)
   assert not any(name.startswith("second.v1.plan.md") for name in artifacts)
 
@@ -819,13 +838,13 @@ def test_web_api_stars_session(tmp_path, monkeypatch):
           app_name=APP_NAME,
           user_id=ctx.settings.user_id,
           session_id="session-1",
-          state={"handa:agent_id": "orca_adk", "handa:project_id": project["id"]},
+          state={"handa:agent_id": "orca", "handa:project_id": project["id"]},
       )
   )
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="important task",
   )
 
@@ -879,13 +898,13 @@ def test_web_api_archives_and_unarchives_session(tmp_path, monkeypatch):
           app_name=APP_NAME,
           user_id=ctx.settings.user_id,
           session_id="session-archive",
-          state={"handa:agent_id": "orca_adk", "handa:project_id": project["id"]},
+          state={"handa:agent_id": "orca", "handa:project_id": project["id"]},
       )
   )
   ctx.db.create_session(
       session_id="session-archive",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="archive me",
   )
 
@@ -921,7 +940,7 @@ def test_web_api_marks_session_unread_and_read(tmp_path, monkeypatch):
   ctx.db.create_session(
       session_id="session-unread",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="read later",
   )
 
@@ -955,13 +974,13 @@ def test_web_api_soft_deletes_session(tmp_path, monkeypatch):
           app_name=APP_NAME,
           user_id=ctx.settings.user_id,
           session_id="session-delete",
-          state={"handa:agent_id": "orca_adk", "handa:project_id": project["id"]},
+          state={"handa:agent_id": "orca", "handa:project_id": project["id"]},
       )
   )
   ctx.db.create_session(
       session_id="session-delete",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="delete me",
   )
 
@@ -1016,12 +1035,12 @@ def test_web_api_invocation_creation_uses_project_project(tmp_path, monkeypatch)
   client = TestClient(app)
   project = client.post(
       "/api/projects",
-      json={"agent_id": "orca_adk", "root_path": str(project)},
+      json={"agent_id": "orca", "root_path": str(project)},
   ).json()
   created = client.post(
       "/api/turns",
       data={
-          "agent_id": "orca_adk",
+          "agent_id": "orca",
           "input_text": "hello",
           "project_id": project["id"],
           "model_config_id": "gemini-3.5-flash",
@@ -1045,7 +1064,7 @@ def test_web_api_invocation_creation_uses_project_project(tmp_path, monkeypatch)
   continued = client.post(
       "/api/turns",
       data={
-          "agent_id": "orca_adk",
+          "agent_id": "orca",
           "input_text": "continue",
           "project_id": project["id"],
           "session_id": created["session_id"],
@@ -1072,14 +1091,10 @@ def test_web_api_lists_agent_definitions(tmp_path, monkeypatch):
   by_id = {agent["id"]: agent for agent in agents}
   assert by_id["browser"]["runtime"] == "native"
   assert by_id["browser"]["label"] == "browser"
-  assert by_id["orca_adk"]["runtime"] == "adk"
-  assert by_id["orca_adk"]["label"] == "Orca ADK"
   assert by_id["orca"]["runtime"] == "native"
   assert by_id["orca"]["label"] == "Orca"
   assert by_id["ralph"]["runtime"] == "native"
   assert by_id["ralph"]["label"] == "ralph"
-  assert by_id["orca_langgraph"]["runtime"] == "langgraph"
-  assert by_id["orca_langgraph"]["label"] == "Orca LangGraph"
 
 
 def test_web_api_agent_catalog(tmp_path, monkeypatch):
@@ -1147,7 +1162,7 @@ def test_web_api_agent_catalog_without_introspection_export(tmp_path, monkeypatc
   assert body["skills"] == []
 
 
-def test_web_api_invocation_creation_persists_langgraph_runtime(
+def test_web_api_invocation_creation_persists_native_runtime(
     tmp_path,
     monkeypatch,
 ):
@@ -1238,10 +1253,10 @@ def test_session_detail_projects_agent_tasks_and_child_breadcrumbs(tmp_path, mon
   client.patch("/api/settings", json={"model_config_id": "gemini-3.5-flash"})
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Research storage.",
       summary="Storage child agent",
       session_id=parent["id"],
@@ -1316,7 +1331,7 @@ def test_session_detail_projects_command_background_tasks(tmp_path, monkeypatch)
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_background_task(
       command="pnpm dev",
@@ -1347,7 +1362,7 @@ def test_session_detail_projects_session_progress_items(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   app.state.web_context.services.session_service.merge_state_sync(
       session["id"],
@@ -1408,7 +1423,7 @@ def test_session_detail_keeps_running_progress_while_invocation_is_live(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   turn = ctx.db.create_turn(
@@ -1443,7 +1458,7 @@ def test_session_detail_and_routes_project_browser_environment(tmp_path, monkeyp
   project_row = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project_row["id"]},
+      json={"agent_id": "orca", "project_id": project_row["id"]},
   ).json()
   browser_dir(storage_root, session["id"]).mkdir(parents=True)
   browser_screenshot_path(storage_root, session["id"]).write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -1498,7 +1513,7 @@ def test_session_detail_surfaces_child_sub_agent_browser_environment(tmp_path, m
   project_row = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project_row["id"]},
+      json={"agent_id": "orca", "project_id": project_row["id"]},
   ).json()
   task = start_run_agent_task(
       agent_id="browser",
@@ -1547,7 +1562,7 @@ def test_session_detail_skips_closed_child_browser_environment(tmp_path, monkeyp
   project_row = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project_row["id"]},
+      json={"agent_id": "orca", "project_id": project_row["id"]},
   ).json()
   task = start_run_agent_task(
       agent_id="browser",
@@ -1631,7 +1646,7 @@ def test_browser_environment_routes_forward_interactions(tmp_path, monkeypatch):
   project_row = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project_row["id"]},
+      json={"agent_id": "orca", "project_id": project_row["id"]},
   ).json()
 
   refresh = client.post(f"/api/sessions/{session['id']}/browser/refresh")
@@ -1735,7 +1750,7 @@ def test_browser_environment_websocket_streams_frames_and_interactions(tmp_path,
   project_row = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project_row["id"]},
+      json={"agent_id": "orca", "project_id": project_row["id"]},
   ).json()
 
   with client.websocket_connect(f"/api/sessions/{session['id']}/browser/stream") as websocket:
@@ -1790,10 +1805,10 @@ def test_session_task_terminate_marks_agent_task_cancelled(tmp_path, monkeypatch
   client.patch("/api/settings", json={"model_config_id": "gemini-3.5-flash"})
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Research storage.",
       session_id=parent["id"],
       user_id="user",
@@ -1836,10 +1851,10 @@ def test_background_task_manager_delivers_subagent_completion_notification(
   client.patch("/api/settings", json={"model_config_id": "gemini-3.5-flash"})
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Research storage.",
       session_id=parent["id"],
       user_id="user",
@@ -1947,10 +1962,10 @@ def test_background_task_manager_dispatches_delivered_notification_invocation(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Research storage.",
       session_id=parent["id"],
       user_id="user",
@@ -2000,7 +2015,7 @@ def test_background_task_manager_keeps_notification_pending_with_active_invocati
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   ctx.db.create_turn(
@@ -2011,7 +2026,7 @@ def test_background_task_manager_keeps_notification_pending_with_active_invocati
   active = ctx.db.get_latest_turn_for_session(parent["id"])
   ctx.db.update_turn(active["id"], status="running")
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Research storage.",
       session_id=parent["id"],
       user_id="user",
@@ -2051,10 +2066,10 @@ def test_background_task_manager_keeps_nested_notification_pending_while_child_l
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   child_a_task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Run child A.",
       session_id=parent["id"],
       user_id="user",
@@ -2064,7 +2079,7 @@ def test_background_task_manager_keeps_nested_notification_pending_while_child_l
   child_a_task_state["status"] = "running"
   save_task(child_a_task_state)
   child_b_task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Run child B.",
       session_id=child_a_task["child_session_id"],
       user_id="user",
@@ -2123,7 +2138,7 @@ def test_background_task_manager_delivers_command_completion_notification(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_background_task(
       "python3 -c \"print('ok')\"",
@@ -2166,7 +2181,7 @@ def test_invocation_queue_prioritizes_task_notification_before_user_message(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   user_invocation = ctx.db.create_turn(
@@ -2224,10 +2239,10 @@ def test_execute_turn_finalizes_waiting_parent_task(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   task = start_run_agent_task(
-      agent_id="orca_adk",
+      agent_id="orca",
       prompt="Run child A.",
       session_id=parent["id"],
       user_id="user",
@@ -2239,7 +2254,7 @@ def test_execute_turn_finalizes_waiting_parent_task(
   app.state.web_context.db.create_session(
       session_id=task["child_session_id"],
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       parent_session_id=parent["id"],
       parent_task_id=task["id"],
   )
@@ -2311,7 +2326,7 @@ def test_session_title_generation_updates_session(tmp_path, monkeypatch):
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="design session naming rules",
   )
 
@@ -2350,7 +2365,7 @@ def test_session_title_generation_keeps_fallback_on_empty_model_output(
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="fallback title",
   )
 
@@ -2385,7 +2400,7 @@ def test_session_title_auto_generation_does_not_override_manual_rename(
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="seed",
   )
   renamed = client.patch(
@@ -2425,7 +2440,7 @@ def test_execute_turn_uses_project_root(tmp_path, monkeypatch):
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
   )
   invocation = ctx.db.create_turn(
       session_id="session-1",
@@ -2447,120 +2462,6 @@ def test_execute_turn_uses_project_root(tmp_path, monkeypatch):
   assert seen["model_config_id"] == "gemini-3.5-flash"
   assert seen["streaming_mode_enabled"] is False
   assert fetched["status"] == "completed"
-
-
-def test_execute_turn_runs_langgraph_agent(tmp_path, monkeypatch):
-  storage_root = tmp_path / ".handa"
-  project = tmp_path / "project"
-  project.mkdir()
-  (project / "README.md").write_text("demo\n", encoding="utf-8")
-  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
-  monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-
-  from types import SimpleNamespace
-
-  from google.genai import types
-  from src.agents.handa_langgraph import orca as lg_main
-
-  captured_user_texts: list[str] = []
-  scripted = [
-      types.Content(
-          role="model",
-          parts=[
-              types.Part(
-                  function_call=types.FunctionCall(
-                      name="files_read", args={"path": "README.md"}
-                  )
-              )
-          ],
-      ),
-      types.Content(role="model", parts=[types.Part(text="LLM inspected README.md.")]),
-  ]
-  call_count: list[int] = []
-
-  async def fake_generate(*, client, model, contents, config):
-    call_count.append(1)
-    first_text = contents[0].parts[0].text if contents and contents[0].parts else ""
-    captured_user_texts.append(str(first_text))
-    content = scripted[len(call_count) - 1]
-    return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
-
-  monkeypatch.setattr(lg_main, "_generate_model_response", fake_generate)
-
-  app = create_app()
-  client = TestClient(app)
-  project = client.post("/api/projects", json={"root_path": str(project)}).json()
-  ctx = app.state.web_context
-  asyncio.run(
-      ctx.services.session_service.create_session(
-          app_name=APP_NAME,
-          user_id=ctx.settings.user_id,
-          session_id="session-langgraph",
-          state={
-              "handa:agent_id": "orca",
-              "handa:project_id": project["id"],
-              "handa:project_root": str(project),
-          },
-      )
-  )
-  ctx.db.create_session(
-      session_id="session-langgraph",
-      project_id=project["id"],
-      agent_id="orca",
-      agent_runtime="langgraph",
-      title="LangGraph run",
-  )
-  previous = ctx.db.create_turn(
-      session_id="session-langgraph",
-      title="Previous",
-      input_text="What agent are you?",
-  )
-  ctx.db.update_turn(
-      previous["id"],
-      status="completed",
-      final_text="I am Orca.",
-  )
-  invocation = ctx.db.create_turn(
-      session_id="session-langgraph",
-      title="LangGraph run",
-      input_text="Inspect project.",
-  )
-
-  asyncio.run(execute_turn(ctx, invocation["id"]))
-
-  fetched = ctx.db.get_turn(invocation["id"])
-  events = ctx.db.list_steps_for_turn(turn_id=invocation["id"])
-  detail = client.get("/api/sessions/session-langgraph/detail").json()
-
-  assert fetched["status"] == "completed"
-  assert fetched["final_text"] == "LLM inspected README.md."
-  kinds = [event["kind"] for event in events]
-  # Lifecycle bookkeeping (langgraph.started) is filtered out of the timeline.
-  assert "runtime_step" not in kinds
-  assert kinds[-1] == "agent_text"
-  assert "tool_call" in kinds
-  assert "tool_response" in kinds
-  assert events[-1]["id"].startswith("lg_")
-  assert events[-1]["payload"]["final"] is True
-  tool_response = next(event for event in events if event["kind"] == "tool_response")
-  assert tool_response["payload"]["name"] == "files_read"
-  assert tool_response["payload"]["response"]["path"] == "README.md"
-  from src.storage.runtime_event_store import RuntimeEventStore
-
-  raw_kinds = [
-      item["event"]["kind"]
-      for item in RuntimeEventStore(storage_root).list_events(
-          session_id="session-langgraph",
-          runtime="langgraph",
-      )
-  ]
-  assert "langgraph.tool_call" in raw_kinds
-  assert "langgraph.tool_result" in raw_kinds
-  # Cross-turn memory lives in the LangGraph checkpointer; no conversation
-  # context text is folded into the user message anymore.
-  assert captured_user_texts[0] == "Inspect project."
-  assert detail["agent_runtime"] == "langgraph"
-  assert [step["kind"] for step in detail["steps"]] == kinds
 
 
 def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
@@ -2663,7 +2564,7 @@ def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
   assert [step["kind"] for step in detail["steps"]] == kinds
 
 
-def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeypatch):
+def test_native_child_session_detail_replays_runtime_events(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   project_path = tmp_path / "project"
   project_path.mkdir()
@@ -2675,14 +2576,14 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   ctx = app.state.web_context
   parent_id = "parent-session"
   child_id = "child-session"
-  task_id = "task_langgraph"
+  task_id = "task_native"
   asyncio.run(
       ctx.services.session_service.create_session(
           app_name=APP_NAME,
           user_id=ctx.settings.user_id,
           session_id=parent_id,
           state={
-              "handa:agent_id": "orca_adk",
+              "handa:agent_id": "orca",
               "handa:project_id": project["id"],
               "handa:project_root": str(project_path),
           },
@@ -2696,7 +2597,7 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
           state={
               "handa:parent_session_id": parent_id,
               "handa:parent_task_id": task_id,
-              "handa:agent_runtime": "langgraph",
+              "handa:agent_runtime": "native",
               "handa:target_agent_id": "orca",
               "handa:project_id": project["id"],
               "handa:project_root": str(project_path),
@@ -2707,8 +2608,8 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   ctx.db.create_session(
       session_id=parent_id,
       project_id=project["id"],
-      agent_id="orca_adk",
-      agent_runtime="adk",
+      agent_id="orca",
+      agent_runtime="native",
   )
   save_task(
       {
@@ -2716,7 +2617,7 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
           "session_id": parent_id,
           "kind": "run_agent",
           "status": "running",
-          "agent_runtime": "langgraph",
+          "agent_runtime": "native",
           "agent_id": "orca",
           "child_session_id": child_id,
           "project_root": str(project_path),
@@ -2731,13 +2632,13 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   store.append(
       session_id=child_id,
       turn_id=f"session:{child_id}",
-      runtime="langgraph",
+      runtime="native",
       event={
-          "id": "lg_call_event",
-          "kind": "langgraph.tool_call",
+          "id": "native_call_event",
+          "kind": "orca.tool_call",
           "summary": "call artifacts_save_text",
           "payload": {
-              "call_id": "lg_call_123",
+              "call_id": "orca_call_123",
               "name": "artifacts_save_text",
               "args": {"filename": "report.md"},
           },
@@ -2746,13 +2647,13 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   store.append(
       session_id=child_id,
       turn_id=f"session:{child_id}",
-      runtime="langgraph",
+      runtime="native",
       event={
-          "id": "lg_result_event",
-          "kind": "langgraph.tool_result",
+          "id": "native_result_event",
+          "kind": "orca.tool_result",
           "summary": "artifacts_save_text -> ok=True",
           "payload": {
-              "call_id": "lg_call_123",
+              "call_id": "orca_call_123",
               "name": "artifacts_save_text",
               "ok": True,
               "result": {"ok": True, "filename": "report.md", "version": 2},
@@ -2762,9 +2663,9 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   store.append(
       session_id=child_id,
       turn_id=f"session:{child_id}",
-      runtime="langgraph",
+      runtime="native",
       event={
-          "id": "lg_final",
+          "id": "native_final",
           "kind": "agent_text",
           "summary": "Orca response",
           "payload": {"text": "Done.", "final": True},
@@ -2775,14 +2676,14 @@ def test_langgraph_child_session_detail_replays_runtime_events(tmp_path, monkeyp
   steps = client.get(f"/api/sessions/{child_id}/steps").json()
   kinds = [step["kind"] for step in detail["steps"]]
 
-  assert detail["agent_runtime"] == "langgraph"
+  assert detail["agent_runtime"] == "native"
   assert detail["parent_session_id"] == parent_id
   # The tool_result event projects a tool_response plus an artifact_delta; each
   # is now its own top-level step rather than nested under payload.projections.
   assert kinds == ["tool_call", "tool_response", "artifact_delta", "agent_text"]
   assert "projections" not in detail["steps"][1]["payload"]
-  assert detail["steps"][1]["id"] == "lg_result_event"
-  assert detail["steps"][2]["id"] == "lg_result_event#1"
+  assert detail["steps"][1]["id"] == "native_result_event"
+  assert detail["steps"][2]["id"] == "native_result_event#1"
   assert detail["steps"][2]["payload"]["filename"] == "report.md"
   # The DB-materialized /steps endpoint and the live /detail projection agree.
   assert steps == detail["steps"]
@@ -2795,11 +2696,8 @@ def test_execute_turn_tracks_current_context_token_usage(tmp_path, monkeypatch):
   monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
 
   async def fake_run_agent_invocation(**kwargs):
-    services = kwargs["services"]
-    session = services.session_service._read_session(kwargs["session_id"])
     for event in (_usage_event(250, 40), _usage_event(100, 10)):
-      appended = await services.session_service.append_event(session, event)
-      await kwargs["on_event"](appended)
+      await kwargs["on_event"](event)
     return RunOutcome(final_text="done")
 
   monkeypatch.setattr(
@@ -2814,7 +2712,7 @@ def test_execute_turn_tracks_current_context_token_usage(tmp_path, monkeypatch):
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
   )
   asyncio.run(
       ctx.services.session_service.create_session(
@@ -2848,7 +2746,7 @@ def test_invocation_summary_uses_stored_usage_without_reading_events(tmp_path, m
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   invocation = ctx.db.create_turn(
@@ -2888,7 +2786,7 @@ def test_session_invocation_events_returns_session_events_in_one_request(tmp_pat
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   first = ctx.db.create_turn(
@@ -2953,7 +2851,7 @@ def test_web_database_session_turn_step_aliases(tmp_path, monkeypatch):
   session = ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="Session title",
   )
   turn = ctx.db.create_turn(
@@ -2989,7 +2887,7 @@ def test_web_database_backfills_session_seq_for_existing_invocation_events(tmp_p
         session_id text not null,
         project_id text,
         agent_id text not null,
-        agent_runtime text not null default 'adk',
+        agent_runtime text not null default 'native',
         model_config_id text,
         title text,
         input_text text not null,
@@ -3082,7 +2980,7 @@ def test_execute_turn_persists_cancelled_status(tmp_path, monkeypatch):
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
   )
   invocation = ctx.db.create_turn(
       session_id="session-1",
@@ -3100,16 +2998,16 @@ def test_execute_turn_persists_cancelled_status(tmp_path, monkeypatch):
 
 
 def _usage_event(input_tokens: int, output_tokens: int):
-  return Event(
-      invocation_id="adk-inv-1",
-      author="handa",
-      content=types.Content(role="model", parts=[types.Part(text="chunk")]),
-      usage_metadata=types.GenerateContentResponseUsageMetadata(
-          prompt_token_count=input_tokens,
-          candidates_token_count=output_tokens,
-          total_token_count=input_tokens + output_tokens,
-      ),
-  )
+  return {
+      "invocation_id": "model-inv-1",
+      "author": "handa",
+      "content": {"role": "model", "parts": [{"text": "chunk"}]},
+      "usage_metadata": {
+          "prompt_token_count": input_tokens,
+          "candidates_token_count": output_tokens,
+          "total_token_count": input_tokens + output_tokens,
+      },
+  }
 
 
 def test_web_api_terminate_invocation_marks_active_run_cancelled(
@@ -3141,7 +3039,7 @@ def test_web_api_terminate_invocation_marks_active_run_cancelled(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   created = client.post(
       "/api/turns",
-      data={"agent_id": "orca_adk", "input_text": "hello", "project_id": project["id"]},
+      data={"agent_id": "orca", "input_text": "hello", "project_id": project["id"]},
   ).json()
 
   terminated = client.post(f"/api/turns/{created['id']}/terminate").json()
@@ -3177,7 +3075,7 @@ def test_create_turn_persists_attachments_and_serves_bytes(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   created = client.post(
       "/api/turns",
-      data={"agent_id": "orca_adk", "input_text": "look at this", "project_id": project["id"]},
+      data={"agent_id": "orca", "input_text": "look at this", "project_id": project["id"]},
       files=[("files", ("hello.png", b"\x89PNG\r\n\x1a\n", "image/png"))],
   ).json()
 
@@ -3221,7 +3119,7 @@ def test_create_turn_allows_attachment_without_text(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   response = client.post(
       "/api/turns",
-      data={"agent_id": "orca_adk", "input_text": "", "project_id": project["id"]},
+      data={"agent_id": "orca", "input_text": "", "project_id": project["id"]},
       files=[("files", ("notes.txt", b"hi", "text/plain"))],
   )
 
@@ -3240,7 +3138,7 @@ def test_create_turn_requires_text_or_files(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   response = client.post(
       "/api/turns",
-      data={"agent_id": "orca_adk", "input_text": "", "project_id": project["id"]},
+      data={"agent_id": "orca", "input_text": "", "project_id": project["id"]},
   )
 
   assert response.status_code == 422
@@ -3260,7 +3158,7 @@ def test_web_api_queues_second_invocation_for_active_session(
   project = client.post("/api/projects", json={"root_path": str(project)}).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   active = ctx.db.create_turn(
@@ -3273,7 +3171,7 @@ def test_web_api_queues_second_invocation_for_active_session(
   response = client.post(
       "/api/turns",
       data={
-          "agent_id": "orca_adk",
+          "agent_id": "orca",
           "input_text": "second",
           "project_id": project["id"],
           "session_id": session["id"],
@@ -3295,7 +3193,7 @@ def test_web_database_cancels_stale_active_invocations(tmp_path):
   db.create_session(
       session_id="session-1",
       project_id="project-1",
-      agent_id="orca_adk",
+      agent_id="orca",
   )
   invocation = db.create_turn(
       session_id="session-1",
@@ -3320,7 +3218,7 @@ def test_web_api_invocation_creation_requires_project(tmp_path, monkeypatch):
   client = TestClient(app)
   response = client.post(
       "/api/turns",
-      data={"agent_id": "orca_adk", "input_text": "hello", "project_id": "missing"},
+      data={"agent_id": "orca", "input_text": "hello", "project_id": "missing"},
   )
 
   assert response.status_code == 404
@@ -3372,7 +3270,7 @@ def test_web_database_migrates_runs_tables_to_invocations(tmp_path):
           "run_old",
           "session-1",
           "project-1",
-          "orca_adk",
+          "orca",
           "Old title",
           "Old prompt",
           "completed",
@@ -3396,7 +3294,7 @@ def test_web_database_migrates_runs_tables_to_invocations(tmp_path):
           "agent_text",
           "Assistant response",
           json.dumps({"text": "Old response"}),
-          json.dumps({"id": "event-1", "invocation_id": "adk-inv-1"}),
+          json.dumps({"id": "event-1", "invocation_id": "model-inv-1"}),
           "2026-05-17T00:00:02Z",
       ),
   )
@@ -3417,10 +3315,10 @@ def test_web_database_migrates_runs_tables_to_invocations(tmp_path):
   assert events[0]["session_seq"] == 1
   assert "session_id" not in events[0]
   assert events[0]["turn_id"] == "run_old"
-  trace_path = tmp_path / "sessions" / "session-1" / "runtime" / "adk" / "events.jsonl"
+  trace_path = tmp_path / "sessions" / "session-1" / "runtime" / "native" / "events.jsonl"
   trace_event = json.loads(trace_path.read_text(encoding="utf-8").splitlines()[0])
   assert trace_event["id"] == "event-1"
-  assert trace_event["event"]["invocation_id"] == "adk-inv-1"
+  assert trace_event["event"]["invocation_id"] == "model-inv-1"
   step_columns = {
       row["name"]
       for row in db._connection.execute("pragma table_info(web_steps)")  # noqa: SLF001
@@ -3461,13 +3359,13 @@ def test_session_title_is_canonical_not_latest_invocation(tmp_path, monkeypatch)
           app_name=APP_NAME,
           user_id=ctx.settings.user_id,
           session_id="session-1",
-          state={"handa:agent_id": "orca_adk", "handa:project_id": project["id"]},
+          state={"handa:agent_id": "orca", "handa:project_id": project["id"]},
       )
   )
   ctx.db.create_session(
       session_id="session-1",
       project_id=project["id"],
-      agent_id="orca_adk",
+      agent_id="orca",
       title="First message title",
   )
   ctx.db.create_turn(
@@ -3548,7 +3446,7 @@ def test_init_schema_strips_legacy_fork_title_prefix(tmp_path):
   db.create_session(
       session_id="fork-auto",
       project_id="p",
-      agent_id="orca_adk",
+      agent_id="orca",
       title="Fork: Analyze code",
       title_source="fork",
       forked_from_session_id="src",
@@ -3557,7 +3455,7 @@ def test_init_schema_strips_legacy_fork_title_prefix(tmp_path):
   db.create_session(
       session_id="fork-manual",
       project_id="p",
-      agent_id="orca_adk",
+      agent_id="orca",
       title="Fork: My keeper",
       title_source="manual",
       forked_from_session_id="src",
@@ -3647,7 +3545,7 @@ def test_init_schema_backfills_session_project_id_from_session_state(tmp_path):
         id text primary key,
         project_id text,
         agent_id text not null,
-        agent_runtime text not null default 'adk',
+        agent_runtime text not null default 'native',
         title text,
         title_source text not null default 'auto',
         parent_session_id text,
@@ -3664,7 +3562,7 @@ def test_init_schema_backfills_session_project_id_from_session_state(tmp_path):
       insert into web_sessions (
         id, project_id, agent_id, agent_runtime, title, title_source, created_at
       ) values (
-        'session-with-state', null, 'main', 'adk', 'State-backed chat', 'auto',
+        'session-with-state', null, 'orca', 'native', 'State-backed chat', 'auto',
         '2026-01-01T00:00:00Z'
       );
       """
@@ -3715,7 +3613,7 @@ def test_turn_user_input_pause_submit_resume_flow(tmp_path, monkeypatch):
   ]
   pending = {
       "request_id": "uireq_test",
-      "runtime": "langgraph",
+      "runtime": "native",
       "tool_name": "request_user_input",
       "questions": questions,
   }
@@ -3737,7 +3635,7 @@ def test_turn_user_input_pause_submit_resume_flow(tmp_path, monkeypatch):
     )
     await kwargs["on_event"](
         {
-            "kind": "langgraph.user_input_requested",
+            "kind": "orca.user_input_requested",
             "summary": "Orca is waiting for user input",
             "payload": {"pending_user_input": pending},
         }
@@ -3768,7 +3666,7 @@ def test_turn_user_input_pause_submit_resume_flow(tmp_path, monkeypatch):
       session_id="session-input",
       project_id=project["id"],
       agent_id="orca",
-      agent_runtime="langgraph",
+      agent_runtime="native",
   )
   turn = ctx.db.create_turn(
       session_id="session-input",
@@ -3862,7 +3760,7 @@ def test_turn_user_input_cancelled_resumes_with_cancellation(tmp_path, monkeypat
 
   pending = {
       "request_id": "uireq_cancel",
-      "runtime": "langgraph",
+      "runtime": "native",
       "tool_name": "request_user_input",
       "questions": [
           {
@@ -3891,7 +3789,7 @@ def test_turn_user_input_cancelled_resumes_with_cancellation(tmp_path, monkeypat
     )
     await kwargs["on_event"](
         {
-            "kind": "langgraph.user_input_requested",
+            "kind": "orca.user_input_requested",
             "summary": "Orca is waiting for user input",
             "payload": {"pending_user_input": pending},
         }
@@ -3922,7 +3820,7 @@ def test_turn_user_input_cancelled_resumes_with_cancellation(tmp_path, monkeypat
       session_id="session-cancel",
       project_id=project["id"],
       agent_id="orca",
-      agent_runtime="langgraph",
+      agent_runtime="native",
   )
   turn = ctx.db.create_turn(
       session_id="session-cancel",
@@ -3999,7 +3897,7 @@ def test_web_api_retry_turn_reruns_failed_turn_with_same_input(tmp_path, monkeyp
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   ctx.db.update_session_title(source["id"], "Investigate", source="manual")
@@ -4059,7 +3957,7 @@ def test_web_api_retry_turn_rejects_live_turn(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   running = ctx.db.create_turn(session_id=source["id"], title="Live", input_text="hi")
@@ -4081,7 +3979,7 @@ def test_web_api_terminate_turn_cancels_child_agent_runs(tmp_path, monkeypatch):
   project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
   source = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
   ctx = app.state.web_context
   turn = ctx.db.create_turn(session_id=source["id"], title="Parent", input_text="spawn a child")

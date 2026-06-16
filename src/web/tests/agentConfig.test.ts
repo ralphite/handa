@@ -27,8 +27,8 @@ const catalog: BackendAgentCatalog = {
     { name: 'vcs-jj', skill_name: 'jj-workflows', description: 'Use jj.', source: 'system' },
   ],
   agents: [
-    { id: 'browser', runtime: 'adk', label: 'browser', description: 'Drives a headless browser.' },
-    { id: 'orca_adk', runtime: 'adk', label: 'Orca ADK', description: '' },
+    { id: 'browser', runtime: 'native', label: 'browser', description: 'Drives a headless browser.' },
+    { id: 'orca', runtime: 'native', label: 'Orca', description: '' },
   ],
   model_configs: [
     { id: 'gemini-3.1-pro-high', label: 'Gemini 3.1 Pro High', description: '', context_window: 1000000 },
@@ -78,9 +78,9 @@ describe('parseAgentConfig', () => {
   })
 
   it('defaults missing optional fields and reads legacy model fields', () => {
-    const parsed = parseAgentConfig(JSON.stringify({ name: 'orca_adk', model_config_id: 'gemini-3.1-pro-high' }))
+    const parsed = parseAgentConfig(JSON.stringify({ name: 'orca', model_config_id: 'gemini-3.1-pro-high' }))
     expect(parsed).toMatchObject({
-      name: 'orca_adk',
+      name: 'orca',
       description: '',
       modelConfigId: 'gemini-3.1-pro-high',
       tools: [],

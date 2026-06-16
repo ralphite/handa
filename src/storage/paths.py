@@ -47,10 +47,6 @@ def runtime_events_path(root: Path | str | None, session_id: str, runtime: str) 
   return runtime_dir(root, session_id, runtime) / "events.jsonl"
 
 
-def langgraph_checkpoints_path(root: Path | str | None = None) -> Path:
-  return resolve_storage_root(root) / "langgraph" / "checkpoints.sqlite3"
-
-
 def browser_dir(root: Path | str | None, session_id: str) -> Path:
   return session_dir(root, session_id) / "browser"
 

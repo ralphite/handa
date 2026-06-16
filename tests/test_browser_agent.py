@@ -122,18 +122,11 @@ def test_browser_runs_native_tool_loop(tmp_path, monkeypatch):
   asyncio.run(run_test())
 
 
-def test_browser_config_matches_legacy_adk_browser_config():
+def test_browser_config_is_native_only():
   native_config = json.loads(MAIN_CONFIG_PATH.read_text(encoding="utf-8"))
-  legacy_config = json.loads(
-      (
-          MAIN_CONFIG_PATH.parents[1]
-          / "handa_adk"
-          / "browser"
-          / "browser.agent.json"
-      ).read_text(encoding="utf-8")
-  )
 
-  assert native_config == legacy_config
+  assert native_config["name"] == "browser"
+  assert native_config["tools"]
 
 
 def test_browser_agent_package_has_no_framework_dependency():

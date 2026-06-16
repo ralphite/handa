@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from html import escape
 
-from ..config import load_agent_config_from_path
-from .handa_adk.loader import AGENTS_DIR
+from ..agent_runtime import list_agent_definitions
 
 
 SELF_SUBAGENT = "self"
@@ -12,11 +11,10 @@ SELF_SUBAGENT = "self"
 def render_subagent_instructions(subagent_names: list[str]) -> str:
   """Render the shared <subagents> prompt block for the given subagent names.
 
-  Mirrors render_skill_instructions: a declarative list, surfaced identically
-  across ADK and LangGraph agents, telling the parent which sub-agents are
-  available for delegation. Unlike skills, unknown names are rendered as saved
-  configs rather than raising, because user-generated configs are not
-  resolvable at build time.
+  Mirrors render_skill_instructions: a declarative list that tells the parent
+  which sub-agents are available for delegation. Unlike skills, unknown names
+  are rendered as saved configs rather than raising, because user-generated
+  configs are not resolvable at build time.
   """
   if not subagent_names:
     return ""
@@ -70,14 +68,11 @@ def _render_subagent(name: str) -> list[str]:
 
 
 def _predefined_agent_description(agent_id: str) -> str | None:
-  """Best-effort description for a built-in ADK agent, or None if it is not one."""
-  config_path = AGENTS_DIR / agent_id / f"{agent_id}.agent.json"
-  if not config_path.exists():
-    return None
-  try:
-    return load_agent_config_from_path(config_path).description or agent_id
-  except (OSError, ValueError):
-    return None
+  """Best-effort description for a built-in native agent."""
+  for definition in list_agent_definitions():
+    if definition.id == agent_id:
+      return definition.description or agent_id
+  return None
 
 
 def _xml_text(value: str) -> str:

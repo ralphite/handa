@@ -5,13 +5,11 @@ import base64
 import json
 from pathlib import Path
 import re
+from dataclasses import dataclass
 from typing import Any
 from typing import Optional
 from typing import Union
 
-from google.adk.artifacts.base_artifact_service import ArtifactVersion
-from google.adk.artifacts.base_artifact_service import BaseArtifactService
-from google.adk.artifacts.base_artifact_service import ensure_part
 from google.genai import types
 
 from .file_io import atomic_write_bytes
@@ -30,12 +28,16 @@ _UNTYPED_VERSIONED_RE = re.compile(
 )
 
 
-class HandaArtifactService(BaseArtifactService):
-  """Flat file ArtifactService stored in each session's `artifacts/` folder.
+@dataclass(frozen=True)
+class ArtifactVersion:
+  version: int
+  canonical_uri: str
+  custom_metadata: dict[str, Any]
+  mime_type: str | None = None
 
-  Must subclass ADK's `BaseArtifactService`: `InvocationContext` is a pydantic
-  model whose `artifact_service` field is validated as `BaseArtifactService`, so
-  ADK rejects a non-subclass at runtime on every agent run.
+
+class HandaArtifactService:
+  """Flat file ArtifactService stored in each session's `artifacts/` folder.
   """
 
   def __init__(self, root: str | None = None):
@@ -87,7 +89,7 @@ class HandaArtifactService(BaseArtifactService):
       session_id: str,
       custom_metadata: Optional[dict[str, Any]],
   ) -> int:
-    artifact = ensure_part(artifact)
+    artifact = _ensure_part(artifact)
     directory = artifacts_dir(self.root, session_id)
     directory.mkdir(parents=True, exist_ok=True)
 
@@ -269,6 +271,14 @@ class HandaArtifactService(BaseArtifactService):
         custom_metadata=metadata.get("custom_metadata", {}),
         mime_type=metadata.get("mime_type"),
     )
+
+
+def _ensure_part(artifact: Union[types.Part, dict[str, Any]]) -> types.Part:
+  if isinstance(artifact, types.Part):
+    return artifact
+  if isinstance(artifact, dict):
+    return types.Part.model_validate(artifact)
+  raise TypeError(f"Unsupported artifact type: {type(artifact).__name__}")
 
 
 class _ParsedArtifactName:

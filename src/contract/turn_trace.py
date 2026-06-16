@@ -4,16 +4,14 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from .run_events import serialize_adk_event
+from .run_events import serialize_event
 from ..storage.runtime_event_store import RuntimeEventStore
 
 
 WEB_EVENT_KIND_PREFIX = "web."
 
-# Web-originated trace events (lifecycle steps, ADK partial deltas) live in
-# their own stream. The "adk" stream doubles as the ADK conversation history
-# (HandaSessionService rebuilds session.events from it), so it must only ever
-# contain real, non-partial ADK events written by the session service.
+# Web-originated trace events (lifecycle steps, terminate/error markers) live
+# in their own stream. Agent events are written to the native runtime stream.
 WEB_TRACE_RUNTIME = "web"
 
 
@@ -39,26 +37,6 @@ def append_web_step_event(
   )
 
 
-def append_adk_trace_event(
-    storage_root: Path | str | None,
-    *,
-    session_id: str,
-    turn_id: str,
-    event: Any,
-) -> dict[str, Any]:
-  """Append a serialized ADK event (partial deltas) to the web trace stream."""
-  raw_event = jsonable_event(event)
-  return RuntimeEventStore(storage_root).append(
-      session_id=session_id,
-      turn_id=turn_id,
-      runtime=WEB_TRACE_RUNTIME,
-      # Stamp with the event's own timestamp (matching the session service's
-      # adk-stream envelopes) so cross-stream merge ordering follows event time.
-      created_at=_optional_str(raw_event.get("timestamp")),
-      event=raw_event,
-  )
-
-
 def append_runtime_trace_event(
     storage_root: Path | str | None,
     *,
@@ -67,7 +45,7 @@ def append_runtime_trace_event(
     runtime: str,
     event: Any,
 ) -> dict[str, Any]:
-  """Append a non-ADK runtime event (e.g. langgraph) to its trace stream."""
+  """Append a native runtime event to its trace stream."""
   raw_event = jsonable_event(event)
   event_id = _optional_str(raw_event.get("id")) or f"{runtime}_evt_{uuid.uuid4().hex[:12]}"
   raw_event["id"] = event_id
@@ -84,7 +62,7 @@ def append_runtime_trace_event(
 def jsonable_event(event: Any) -> dict[str, Any]:
   if isinstance(event, dict):
     return dict(event)
-  serialized = serialize_adk_event(event)
+  serialized = serialize_event(event)
   return serialized if isinstance(serialized, dict) else {"value": serialized}
 
 

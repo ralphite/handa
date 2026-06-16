@@ -4,17 +4,17 @@ import asyncio
 import io
 import json
 
-from google.genai.errors import APIError
 from google.genai import types
+from google.genai.errors import APIError
 
-from src.agent_run_worker import _is_retryable_run_error
 from src.agent_run_worker import _has_child_tasks
 from src.agent_run_worker import _load_agent_config
-from src.agent_run_worker import _load_task_agent
-from src.agent_run_worker import _run_langgraph_task
-from src.agent_run_worker import _run_native_task
-from src.agent_run_worker import _run_child_agent_with_retries
+from src.agent_run_worker import _run_config_task
+from src.agent_run_worker import _run_registered_agent_task
+from src.agent_run_worker import _run_with_child_event_log
+from src.agent_run_worker import _task_config
 from src.agent_run_worker import _task_prompt
+from src.run_outcome import RunOutcome
 from src.runner import APP_NAME
 from src.runner import DEFAULT_USER_ID
 from src.runtime import save_task
@@ -23,128 +23,81 @@ from src.storage import HandaSessionService
 from src.storage.runtime_event_store import RuntimeEventStore
 
 
-class FakeRunner:
-  def __init__(self):
-    self.calls = 0
-
-  async def run_async(self, **kwargs):
-    self.calls += 1
-    if self.calls == 1:
-      raise APIError(
-          503,
-          {
-              "error": {
-                  "code": 503,
-                  "message": "temporary overload",
-                  "status": "UNAVAILABLE",
-              }
-          },
-      )
-    yield FakeEvent("done")
-
-
-class FakeRateLimitRunner:
-  def __init__(self):
-    self.calls = 0
-
-  async def run_async(self, **kwargs):
-    self.calls += 1
-    if self.calls == 1:
-      raise FakeResourceExhaustedError()
-    yield FakeEvent("done after quota retry")
-
-
-class FakeResourceExhaustedError(Exception):
-  code = 429
-
-  def __str__(self):
-    return "429 RESOURCE_EXHAUSTED. quota exceeded"
-
-
-class FakeEvent:
-  author = "qa_runner"
-
-  def __init__(self, text: str):
-    self.content = type("Content", (), {"parts": [type("Part", (), {"text": text})()]})()
-
-  def is_final_response(self) -> bool:
-    return True
-
-  def get_function_calls(self) -> list:
-    return []
-
-  def get_function_responses(self) -> list:
-    return []
-
-
-def test_retryable_agent_run_error_detects_429_and_5xx():
-  assert _is_retryable_run_error(APIError(429, {"error": {"code": 429}})) is True
-  assert _is_retryable_run_error(APIError(503, {"error": {"code": 503}})) is True
-  assert _is_retryable_run_error(FakeResourceExhaustedError()) is True
-  assert _is_retryable_run_error(APIError(400, {"error": {"code": 400}})) is False
-  assert _is_retryable_run_error(RuntimeError("boom")) is False
-
-
-def test_run_child_agent_retries_transient_error(monkeypatch):
+def test_run_with_child_event_log_retries_transient_error_before_output(
+    tmp_path,
+    monkeypatch,
+):
   async def run():
-    runner = FakeRunner()
+    calls = 0
     log = io.StringIO()
-    sleep_delays = []
+    sleeps = []
 
     async def fake_sleep(delay):
-      sleep_delays.append(delay)
+      sleeps.append(delay)
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    result = await _run_child_agent_with_retries(
-        runner=runner,
-        user_id="user",
-        child_session_id="child",
-        prompt="run qa",
+    async def runner(emit_event):
+      nonlocal calls
+      calls += 1
+      if calls == 1:
+        raise APIError(503, {"error": {"code": 503}})
+      await emit_event({"id": "evt-final", "kind": "agent_text"})
+      return RunOutcome(final_text="done")
+
+    final_text = await _run_with_child_event_log(
+        task={"child_session_id": "child-session"},
         log_handle=log,
-        base_delay_sec=0,
+        session_service=HandaSessionService(root=str(tmp_path / ".handa")),
+        storage_root=tmp_path / ".handa",
+        runner=runner,
     )
 
     records = [json.loads(line) for line in log.getvalue().splitlines()]
-    assert result == "done"
-    assert runner.calls == 2
-    assert records[0]["retry"] is True
-    assert records[0]["error"]["code"] == 503
-    assert records[0]["delay_sec"] == 0
-    assert sleep_delays == [0]
-    assert records[-1]["final"] is True
-    assert records[-1]["text"] == "done"
+    assert final_text == "done"
+    assert calls == 2
+    assert sleeps == [2.0]
+    assert records[0]["kind"] == "native.retry"
+    assert records[-1]["kind"] == "agent_text"
 
   asyncio.run(run())
 
 
-def test_run_child_agent_retries_resource_exhausted_error(monkeypatch):
+def test_run_with_child_event_log_does_not_retry_after_output(tmp_path, monkeypatch):
   async def run():
-    runner = FakeRateLimitRunner()
+    calls = 0
     log = io.StringIO()
-    sleep_delays = []
+    sleeps = []
 
     async def fake_sleep(delay):
-      sleep_delays.append(delay)
+      sleeps.append(delay)
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
-    result = await _run_child_agent_with_retries(
-        runner=runner,
-        user_id="user",
-        child_session_id="child",
-        prompt="run qa",
-        log_handle=log,
-        base_delay_sec=0,
-    )
+    async def runner(emit_event):
+      nonlocal calls
+      calls += 1
+      await emit_event({"id": "evt-partial", "kind": "agent_text"})
+      raise APIError(503, {"error": {"code": 503}})
 
-    records = [json.loads(line) for line in log.getvalue().splitlines()]
-    assert result == "done after quota retry"
-    assert runner.calls == 2
-    assert records[0]["retry"] is True
-    assert records[0]["error"]["code"] == 429
-    assert records[0]["delay_sec"] == 60.0
-    assert sleep_delays == [60.0]
+    try:
+      await _run_with_child_event_log(
+          task={"child_session_id": "child-session"},
+          log_handle=log,
+          session_service=HandaSessionService(root=str(tmp_path / ".handa")),
+          storage_root=tmp_path / ".handa",
+          runner=runner,
+      )
+    except APIError:
+      pass
+    else:
+      raise AssertionError("Expected APIError")
+
+    assert calls == 1
+    assert sleeps == []
+    assert [json.loads(line)["kind"] for line in log.getvalue().splitlines()] == [
+        "agent_text"
+    ]
 
   asyncio.run(run())
 
@@ -189,7 +142,7 @@ def test_generated_agent_run_ignores_legacy_model_field(tmp_path):
         ),
     )
 
-    agent = await _load_task_agent(
+    config = await _task_config(
         task={
             "kind": "agent_run",
             "config_name": "legacy_worker",
@@ -201,16 +154,14 @@ def test_generated_agent_run_ignores_legacy_model_field(tmp_path):
         user_id=DEFAULT_USER_ID,
     )
 
-    assert agent.model == "gemini-3.5-flash"
+    assert config.model_config_id == "gemini-3.5-flash-high"
 
   asyncio.run(run())
 
 
 def test_system_agent_run_uses_predefined_model_config_id(tmp_path):
   async def run():
-    service = HandaArtifactService(root=str(tmp_path / ".handa"))
-
-    agent = await _load_task_agent(
+    config = await _task_config(
         task={
             "kind": "system_agent_run",
             "config": {
@@ -218,16 +169,12 @@ def test_system_agent_run_uses_predefined_model_config_id(tmp_path):
                 "model_config_id": "gemini-3.1-pro-low",
             },
         },
-        artifact_service=service,
+        artifact_service=HandaArtifactService(root=str(tmp_path / ".handa")),
         parent_session_id="session-1",
         user_id=DEFAULT_USER_ID,
     )
 
-    assert agent.model == "gemini-3.1-pro-preview"
-    assert (
-        agent.generate_content_config.thinking_config.thinking_level
-        == types.ThinkingLevel.LOW
-    )
+    assert config.model_config_id == "gemini-3.1-pro-low"
 
   asyncio.run(run())
 
@@ -252,105 +199,76 @@ def test_task_prompt_keeps_project_agents_out_of_user_prompt(tmp_path):
   assert "Context:\nFocus on changed files." in prompt
 
 
-def test_load_run_agent_includes_project_agents_in_instruction(tmp_path):
+def test_run_config_task_returns_final_text_and_logs_events(tmp_path, monkeypatch):
   async def run():
-    (tmp_path / "AGENTS.md").write_text("Answer in Chinese.\n", encoding="utf-8")
-
-    agent = await _load_task_agent(
-        task={
-            "kind": "run_agent",
-            "agent_id": "orca_adk",
-            "project_root": str(tmp_path),
-        },
-        artifact_service=HandaArtifactService(root=str(tmp_path / ".handa")),
-        parent_session_id="session-1",
+    artifact_service = HandaArtifactService(root=str(tmp_path / ".handa"))
+    await artifact_service.save_artifact(
+        app_name=APP_NAME,
         user_id=DEFAULT_USER_ID,
+        session_id="parent-session",
+        filename="worker.agent.json",
+        artifact=types.Part.from_text(
+            text='{"name":"worker","model_config_id":"gemini-3.5-flash"}'
+        ),
     )
-
-    assert "Project Instructions (project_root/AGENTS.md)" in agent.instruction
-    assert "Answer in Chinese." in agent.instruction
-
-  asyncio.run(run())
-
-
-def test_run_langgraph_task_returns_final_text_and_logs_events(tmp_path, monkeypatch):
-  async def run():
-    from types import SimpleNamespace
-
-    from google.genai import types
-    from src.agents.handa_langgraph import orca as lg_main
-
-    (tmp_path / "README.md").write_text("demo\n", encoding="utf-8")
-    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     log = io.StringIO()
 
-    scripted = [
-        types.Content(
-            role="model",
-            parts=[
-                types.Part(
-                    function_call=types.FunctionCall(
-                        name="files_read", args={"path": "README.md"}
-                    )
-                )
-            ],
-        ),
-        types.Content(role="model", parts=[types.Part(text="LLM inspected README.md.")]),
-    ]
-    calls: list[int] = []
+    async def fake_config_agent(**kwargs):
+      await kwargs["emit_event"]({"id": "evt-start", "kind": "worker.started"})
+      await kwargs["emit_event"](
+          {
+              "id": "evt-final",
+              "kind": "agent_text",
+              "payload": {"text": "config done", "final": True},
+          }
+      )
+      return RunOutcome(final_text="config done")
 
-    async def fake_generate(*, client, model, contents, config):
-      calls.append(1)
-      content = scripted[len(calls) - 1]
-      return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+    monkeypatch.setattr("src.agent_run_worker.run_config_agent", fake_config_agent)
 
-    monkeypatch.setattr(lg_main, "_generate_model_response", fake_generate)
-
-    final_text = await _run_langgraph_task(
+    final_text = await _run_config_task(
         task={
-            "kind": "run_agent",
-            "agent_runtime": "langgraph",
-            "agent_id": "orca",
+            "kind": "agent_run",
+            "config_name": "worker",
+            "config_version": None,
             "prompt": "Inspect the repo.",
             "context": "Focus on top-level files.",
             "project_root": str(tmp_path),
             "session_id": "parent-session",
-            "child_session_id": "child-session",
+            "child_session_id": "child-config-session",
             "user_id": "user",
         },
+        artifact_service=artifact_service,
+        parent_session_id="parent-session",
+        user_id=DEFAULT_USER_ID,
         log_handle=log,
         session_service=HandaSessionService(root=str(tmp_path / ".handa")),
         storage_root=tmp_path / ".handa",
     )
 
     records = [json.loads(line) for line in log.getvalue().splitlines()]
-    assert final_text == "LLM inspected README.md."
-    kinds = [record["kind"] for record in records]
-    assert kinds[0] == "langgraph.started"
-    assert kinds[-1] == "agent_text"
-    assert "langgraph.tool_call" in kinds
-    assert "langgraph.tool_result" in kinds
-    tool_calls = [
-        record["payload"]["name"]
-        for record in records
-        if record["kind"] == "langgraph.tool_call"
+    assert final_text == "config done"
+    assert [record["kind"] for record in records] == [
+        "worker.started",
+        "agent_text",
     ]
-    assert tool_calls == ["files_read"]
-    assert records[-1]["payload"]["final"] is True
     stored = RuntimeEventStore(tmp_path / ".handa").list_events(
-        session_id="child-session",
-        runtime="langgraph",
+        session_id="child-config-session",
+        runtime="native",
     )
-    assert [item["event"]["kind"] for item in stored] == kinds
-    assert stored[0]["turn_id"] == "session:child-session"
+    assert [item["event"]["kind"] for item in stored] == [
+        "worker.started",
+        "agent_text",
+    ]
 
   asyncio.run(run())
 
 
-def test_run_native_browser_task_returns_final_text_and_logs_events(tmp_path, monkeypatch):
+def test_run_registered_agent_task_returns_final_text_and_logs_events(
+    tmp_path,
+    monkeypatch,
+):
   async def run():
-    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
     log = io.StringIO()
 
     async def fake_runner(**kwargs):
@@ -362,8 +280,6 @@ def test_run_native_browser_task_returns_final_text_and_logs_events(tmp_path, mo
               "payload": {"text": "browser done", "final": True},
           }
       )
-      from src.run_outcome import RunOutcome
-
       return RunOutcome(final_text="browser done")
 
     monkeypatch.setattr(
@@ -371,7 +287,7 @@ def test_run_native_browser_task_returns_final_text_and_logs_events(tmp_path, mo
         lambda agent_id: fake_runner,
     )
 
-    final_text = await _run_native_task(
+    final_text = await _run_registered_agent_task(
         task={
             "kind": "run_agent",
             "agent_runtime": "native",

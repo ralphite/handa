@@ -121,23 +121,23 @@ def test_validate_answers_rejects_free_text_when_disallowed():
     )
 
 
-def test_build_pending_request_includes_runtime_and_call_id():
+def test_build_pending_request_includes_native_runtime():
   questions = validate_questions([_question()])
   pending = build_pending_request(
-      runtime="adk",
+      runtime="native",
       questions=questions,
-      function_call_id="call-123",
   )
-  assert pending["runtime"] == "adk"
+  assert pending["runtime"] == "native"
   assert pending["tool_name"] == "request_user_input"
-  assert pending["function_call_id"] == "call-123"
+  assert "function_call_id" not in pending
   assert pending["request_id"].startswith("uireq_")
   assert pending["questions"] == questions
 
 
-def test_build_pending_request_langgraph_has_no_call_id():
+def test_build_pending_request_accepts_explicit_request_id():
   pending = build_pending_request(
-      runtime="langgraph",
+      runtime="native",
       questions=validate_questions([_question()]),
+      request_id="uireq_fixed",
   )
-  assert "function_call_id" not in pending
+  assert pending["request_id"] == "uireq_fixed"

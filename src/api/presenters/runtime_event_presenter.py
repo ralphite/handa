@@ -3,22 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .event_presenter import project_model_event
 from .tool_summary import summarize_error
 from .tool_summary import summarize_tool_call
 from .tool_summary import summarize_tool_response
-
-
-# Runtime lifecycle bookkeeping that carries no user-facing information; a
-# timeline entry for these is pure noise.
-_LIFECYCLE_EVENT_KINDS = frozenset({
-    "langgraph.started",
-    "langgraph.checkpoint",
-    "orca.started",
-    "orca.history_boundary",
-    "browser.started",
-    "browser.history_boundary",
-    "ralph.started",
-})
 
 
 def project_runtime_event(
@@ -26,10 +14,10 @@ def project_runtime_event(
     *,
     runtime: str,
 ) -> list[dict[str, Any]]:
-  if runtime == "adk":
-    return [_fallback_projection(event, runtime=runtime)]
   kind = str(event.get("kind") or "")
-  if kind in _LIFECYCLE_EVENT_KINDS:
+  if not kind and _looks_like_legacy_model_event(event):
+    return project_model_event(event)
+  if _is_lifecycle_event(kind):
     return []
   payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
   projected: list[dict[str, Any]] = []
@@ -135,7 +123,7 @@ def project_runtime_event(
             ),
         }
     )
-  elif kind in {"error", "langgraph.error", "orca.error", "browser.error", "ralph.error"}:
+  elif kind == "error" or kind.endswith(".error"):
     projected.append(
         {
             "kind": "error",
@@ -168,12 +156,19 @@ def _fallback_projection(event: dict[str, Any], *, runtime: str) -> dict[str, An
 
 
 def _is_runtime_kind(kind: str, suffix: str) -> bool:
-  return kind in {
-      f"langgraph.{suffix}",
-      f"orca.{suffix}",
-      f"browser.{suffix}",
-      f"ralph.{suffix}",
-  }
+  return kind.endswith(f".{suffix}")
+
+
+def _is_lifecycle_event(kind: str) -> bool:
+  return (
+      kind.endswith(".started")
+      or kind.endswith(".history_boundary")
+      or kind.endswith(".checkpoint")
+  )
+
+
+def _looks_like_legacy_model_event(event: dict[str, Any]) -> bool:
+  return isinstance(event.get("content"), dict) or "usageMetadata" in event or "usage_metadata" in event
 
 
 def _call_id(event: dict[str, Any], payload: dict[str, Any]) -> str:

@@ -47,7 +47,7 @@ def _make_task(client, project_id, **overrides):
       "name": "Nightly review",
       "project_id": project_id,
       "prompt": "Review the repo",
-      "agent_id": "orca_adk",
+      "agent_id": "orca",
       "model_config_id": "gemini-3.5-flash",
   }
   payload.update(overrides)
@@ -69,7 +69,7 @@ def test_automated_task_crud(tmp_path, monkeypatch):
   tid = task["id"]
   assert task["name"] == "Nightly review"
   assert task["enabled"] is False  # default disabled
-  assert task["agent_id"] == "orca_adk"
+  assert task["agent_id"] == "orca"
   assert task["model_config_id"] == "gemini-3.5-flash"
   assert task["prompt"] == "Review the repo"
   assert task["runs"] == []
@@ -186,7 +186,7 @@ def test_create_derives_name_from_prompt(tmp_path, monkeypatch):
       json={
           "project_id": project["id"],
           "prompt": "Summarize open PRs every morning",
-          "agent_id": "orca_adk",
+          "agent_id": "orca",
       },
   )
   assert resp.status_code == 200

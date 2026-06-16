@@ -1,9 +1,8 @@
 """Read-only product metadata surface: agents, model configs, prompt previews.
 
-Everything here is configuration and template rendering — listing agent
-definitions, validating model config ids, rendering instruction text for
-context previews. Importing this must never load agent implementations,
-tools, or ADK/LangGraph runtime code (loaders enumerate agents statically).
+Everything here is configuration and template rendering — listing native agent
+definitions, validating model config ids, and rendering instruction text for
+context previews. Importing this must never load agent implementations.
 """
 from __future__ import annotations
 
@@ -12,9 +11,7 @@ from ..agent_runtime import DEFAULT_WEB_AGENT_ID as DEFAULT_WEB_AGENT_ID
 from ..agent_runtime import get_agent_definition as get_agent_definition
 from ..agent_runtime import list_agent_definitions as list_agent_definitions
 from ..agent_runtime import resolve_agent_id_for_runtime as resolve_agent_id_for_runtime
-from ..agents.handa_adk.loader import AGENTS_DIR as ADK_AGENTS_DIR
-from ..agents.handa_adk.loader import DEFAULT_AGENT_ID as DEFAULT_AGENT_ID
-from ..agents.handa_langgraph.loader import MAIN_CONFIG_PATH as LANGGRAPH_MAIN_CONFIG_PATH
+from ..agent_runtime import DEFAULT_WEB_AGENT_ID as DEFAULT_AGENT_ID
 from ..agents.browser.loader import MAIN_CONFIG_PATH as BROWSER_MAIN_CONFIG_PATH
 from ..agents.orca.loader import MAIN_CONFIG_PATH as ORCA_MAIN_CONFIG_PATH
 from ..agents.ralph.loader import MAIN_CONFIG_PATH as RALPH_MAIN_CONFIG_PATH

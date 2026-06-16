@@ -88,16 +88,16 @@ async def list_sessions(
       include_archived=include_archived,
       archived=archived,
   )
-  adk_sessions = await ctx.services.session_service.list_sessions(
+  stored_sessions = await ctx.services.session_service.list_sessions(
       app_name=APP_NAME,
       user_id=ctx.settings.user_id,
   )
   updated_by_id: dict[str, str] = {
-      session.id: _updated_at(session) for session in adk_sessions.sessions
+      session.id: _updated_at(session) for session in stored_sessions.sessions
   }
   automated_task_id_by_id: dict[str, str] = {
       session.id: automated_task_id
-      for session in adk_sessions.sessions
+      for session in stored_sessions.sessions
       if (automated_task_id := _automated_task_id_from_state(session.state))
   }
   existing_session_ids = set(updated_by_id)
@@ -128,7 +128,7 @@ async def create_session(
   if project is None:
     raise HTTPException(status_code=404, detail="Project not found")
   ctx.db.touch_project(payload.project_id)
-  adk_session = await ctx.services.session_service.create_session(
+  stored_session = await ctx.services.session_service.create_session(
       app_name=APP_NAME,
       user_id=ctx.settings.user_id,
       state={
@@ -138,12 +138,12 @@ async def create_session(
       },
   )
   meta = ctx.db.create_session(
-      session_id=adk_session.id,
+      session_id=stored_session.id,
       project_id=payload.project_id,
       agent_id=agent_id,
       agent_runtime=definition.runtime,
   )
-  return present_session(meta, status="idle", updated_at=_updated_at(adk_session))
+  return present_session(meta, status="idle", updated_at=_updated_at(stored_session))
 
 
 @router.patch("/{session_id}", response_model=SessionSummary)
@@ -330,7 +330,7 @@ async def list_session_steps(
   ingest_session_streams(
       ctx,
       session_id=session_id,
-      runtime=str((meta or {}).get("agent_runtime") or "adk"),
+      runtime=str((meta or {}).get("agent_runtime") or "native"),
   )
   steps = ctx.db.list_steps_for_session(
       session_id=session_id,

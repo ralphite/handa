@@ -42,14 +42,3 @@ def create_handa_app(
       project_root=project_path,
       services=create_handa_services(storage_root),
   )
-
-
-def create_runner(services: HandaServices, agent, *, app_name: str = APP_NAME):
-  from google.adk.runners import Runner
-
-  return Runner(
-      app_name=app_name,
-      agent=agent,
-      artifact_service=services.artifact_service,
-      session_service=services.session_service,
-  )

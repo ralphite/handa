@@ -19,15 +19,19 @@ from .storage.paths import resolve_storage_root
 
 
 def export_tool_definitions(root: Path | str | None = None) -> Path:
-  from .agents.handa_adk.tools.registry import get_tool_registry
+  from .agents.orca.tools import build_toolset
+  from .agents.orca.tools import SessionContext
+  from .agents.tool_catalog import known_agent_tool_names
 
+  ctx = SessionContext(session_id="introspection", user_id="user")
+  toolset = build_toolset(sorted(known_agent_tool_names()), ctx)
   definitions = []
-  for tool_name, spec in sorted(get_tool_registry().items()):
+  for tool_name, function in sorted(toolset.callables.items()):
     definitions.append(
         {
             "name": tool_name,
-            "namespace": spec.namespace,
-            "text": _tool_definition_text(tool_name, spec.function),
+            "namespace": _tool_namespace(tool_name),
+            "text": _tool_definition_text(tool_name, function),
         }
     )
   path = tool_definitions_path(resolve_storage_root(root))
@@ -37,6 +41,24 @@ def export_tool_definitions(root: Path | str | None = None) -> Path:
       json.dumps({"tools": definitions}, ensure_ascii=True, indent=2) + "\n",
   )
   return path
+
+
+def _tool_namespace(tool_name: str) -> str:
+  prefix = tool_name.split("_", 1)[0]
+  if prefix in {
+      "agents",
+      "artifacts",
+      "browser",
+      "commands",
+      "files",
+      "notifications",
+      "notes",
+      "progress",
+      "skills",
+      "tasks",
+  }:
+    return prefix
+  return ""
 
 
 def _tool_definition_text(tool_name: str, function) -> str:

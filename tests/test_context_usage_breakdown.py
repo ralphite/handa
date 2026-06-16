@@ -171,9 +171,8 @@ def test_context_usage_residual_attributes_most_space_to_tool_call_responses():
   assert sum(by_id.values()) == 1500
 
 
-def test_thought_tokens_count_all_replayed_turns_except_final_response():
-  # Thought signatures replay thinking into every later prompt (verified by
-  # prompt-delta analysis on both runtimes); only the final response's
+def test_thought_tokens_count_all_replayed_turns_except_final_response(tmp_path):
+  # Thought signatures replay thinking into every later prompt; only the final response's
   # thoughts are not part of the latest request's prompt yet.
   def usage_event(invocation_id: str, thoughts: int) -> dict:
     return {
@@ -181,18 +180,21 @@ def test_thought_tokens_count_all_replayed_turns_except_final_response():
         "usageMetadata": {"thoughtsTokenCount": thoughts, "promptTokenCount": 100},
     }
 
-  session = SimpleNamespace(
-      id="s1",
-      events=[
-          usage_event("inv-1", 4000),
-          usage_event("inv-1", 2000),
-          usage_event("inv-2", 300),
-          usage_event("inv-2", 200),
-      ],
-  )
-  ctx = SimpleNamespace(settings=SimpleNamespace(storage_root=None))
+  from src.storage.runtime_event_store import RuntimeEventStore
 
-  assert _llm_response_thought_tokens(ctx, session, "adk") == 6300
+  session = SimpleNamespace(id="s1")
+  storage_root = tmp_path / ".handa"
+  store = RuntimeEventStore(storage_root)
+  for event in (
+      usage_event("inv-1", 4000),
+      usage_event("inv-1", 2000),
+      usage_event("inv-2", 300),
+      usage_event("inv-2", 200),
+  ):
+    store.append(session_id=session.id, runtime="native", event=event)
+  ctx = SimpleNamespace(settings=SimpleNamespace(storage_root=storage_root))
+
+  assert _llm_response_thought_tokens(ctx, session, "native") == 6300
 
 
 def test_exact_thought_tokens_survive_residual_scaling():

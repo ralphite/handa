@@ -68,7 +68,7 @@ def test_optimize_calls_gemini_with_context_and_returns_rewrite(
   ).json()
   session = client.post(
       "/api/sessions",
-      json={"agent_id": "orca_adk", "project_id": project["id"]},
+      json={"agent_id": "orca", "project_id": project["id"]},
   ).json()
 
   # Seed a prior turn so the history context is non-empty.

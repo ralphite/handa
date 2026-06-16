@@ -139,7 +139,7 @@ def get_config_path() -> Path:
   configured = os.getenv("HANDA_AGENT_CONFIG_PATH")
   if configured:
     return Path(configured).expanduser().resolve()
-  return APP_DIR / "agents" / "handa_adk" / "orca_adk" / "orca_adk.agent.json"
+  return APP_DIR / "agents" / "orca" / "orca.agent.json"
 
 
 def load_agent_config() -> AgentConfig:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from src.agents.handa_adk.tools import get_tool_registry
+from src.agents.orca.tools import SessionContext
+from src.agents.orca.tools import build_toolset
 from src.progress import normalize_progress_items
 
 
@@ -40,8 +41,10 @@ def test_progress_normalization_preserves_existing_timestamp_when_unchanged():
   ]
 
 
-def test_progress_tool_is_registered_for_adk_agents():
-  registry = get_tool_registry()
+def test_progress_tool_is_registered_for_native_agents():
+  toolset = build_toolset(
+      ["progress_update"],
+      SessionContext(session_id="session-progress", user_id="user"),
+  )
 
-  assert "progress_update" in registry
-  assert registry["progress_update"].namespace == "progress"
+  assert "progress_update" in toolset.callables

@@ -124,7 +124,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   const emptySession = computed<AgentSession>(() => ({
     id: 'empty',
     agentId: draftAgentId.value,
-    agentRuntime: agentDefinitionById(draftAgentId.value)?.runtime ?? 'adk',
+    agentRuntime: agentDefinitionById(draftAgentId.value)?.runtime ?? 'native',
     title: draftProject.value
       ? 'New chat session'
       : projectsLoading.value || retryingInitialLoad.value
@@ -146,7 +146,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
         role: 'assistant',
         createdAt: new Date().toISOString(),
         body: draftProject.value
-          ? 'Enter a real development task, Handa will connect to the backend to run the ADK agent, and render the event stream here.'
+          ? 'Enter a real development task, Handa will connect to the backend to run the native agent, and render the event stream here.'
           : projectsLoading.value || retryingInitialLoad.value
             ? 'Loading projects and recent chats. If the server just restarted, Handa will reconnect automatically.'
             : hasProjects.value
@@ -1209,7 +1209,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   function applySessionDetail(session: AgentSession, detail: BackendSessionDetail) {
     session.title = detail.title
     session.agentId = detail.agent_id
-    session.agentRuntime = detail.agent_runtime ?? 'adk'
+    session.agentRuntime = detail.agent_runtime ?? 'native'
     session.automatedTaskId = detail.automated_task_id ?? null
     session.createdAt = detail.created_at
     session.lastActivityAt = detail.updated_at ?? detail.created_at
@@ -1246,7 +1246,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   function applySessionMeta(session: AgentSession, meta: BackendSession) {
     session.title = meta.title
     session.agentId = meta.agent_id
-    session.agentRuntime = meta.agent_runtime ?? 'adk'
+    session.agentRuntime = meta.agent_runtime ?? 'native'
     session.automatedTaskId = meta.automated_task_id ?? null
     session.createdAt = meta.created_at
     session.lastActivityAt = meta.updated_at ?? meta.created_at
@@ -1319,7 +1319,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     return {
       id: meta.id,
       agentId: meta.agent_id,
-      agentRuntime: meta.agent_runtime ?? 'adk',
+      agentRuntime: meta.agent_runtime ?? 'native',
       automatedTaskId: meta.automated_task_id ?? null,
       title: meta.title,
       createdAt: meta.created_at,
@@ -1358,7 +1358,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     return {
       id: invocation.session_id,
       agentId,
-      agentRuntime: definition?.runtime ?? 'adk',
+      agentRuntime: definition?.runtime ?? 'native',
       latestInvocationId: invocation.id,
       latestModelConfigId: invocation.model_config_id ?? undefined,
       title: titleFromInvocation(invocation),
@@ -1437,7 +1437,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     const session: AgentSession = {
       id: detail.id,
       agentId: detail.agent_id,
-      agentRuntime: detail.agent_runtime ?? 'adk',
+      agentRuntime: detail.agent_runtime ?? 'native',
       automatedTaskId: detail.automated_task_id ?? null,
       latestInvocationId: syntheticInvocationId,
       title: detail.title,
@@ -1550,7 +1550,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   }
 
   function applyEvent(session: AgentSession, event: BackendStep, invocationId: string) {
-    if (event.kind === 'adk_event') return
+    if (event.kind === 'model_event') return
 
     if (event.kind === 'agent_text' || event.kind === 'agent_text_delta') {
       if (isUserAuthoredEvent(event)) return

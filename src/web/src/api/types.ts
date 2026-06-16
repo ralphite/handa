@@ -1,6 +1,6 @@
 export interface BackendAgentDefinition {
   id: string
-  runtime: 'adk' | 'langgraph' | string
+  runtime: 'native' | string
   label: string
   description: string
 }

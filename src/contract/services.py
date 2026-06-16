@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from ..storage import HandaArtifactService
 from ..storage import HandaSessionService
+from ..storage.native_only_migration import run_native_only_storage_migration
 from ..storage.paths import resolve_storage_root
 
 
@@ -39,6 +40,7 @@ def create_handa_services(handa_dir: Path | str | None = None) -> HandaServices:
   configure_base_environment()
   resolved_storage_root = resolve_storage_root(handa_dir)
   os.environ["HANDA_STORAGE_ROOT"] = str(resolved_storage_root)
+  run_native_only_storage_migration(resolved_storage_root)
   return HandaServices(
       storage_root=resolved_storage_root,
       session_service=HandaSessionService(root=str(resolved_storage_root)),

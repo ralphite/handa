@@ -21,7 +21,7 @@ from .turn_queue import dispatch_queued_turns
 from .turn_run_sync import sync_active_turns
 
 if TYPE_CHECKING:
-  from google.adk.sessions.session import Session
+  from ..storage.session_service import Session
 
   from .context import WebApiContext
 

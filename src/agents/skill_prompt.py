@@ -8,8 +8,7 @@ from ..tools import skills
 def render_skill_instructions(skill_names: list[str]) -> str:
   """Render the shared <skills> prompt block for the given skill names.
 
-  Used by every agent runtime so skill exposure stays identical across ADK and
-  LangGraph agents.
+  Used by every native agent so skill exposure stays identical across agents.
   """
   if not skill_names:
     return ""

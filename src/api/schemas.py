@@ -60,7 +60,7 @@ class SessionSummary(BaseModel):
   session_id: str | None = None
   title: str
   agent_id: str
-  agent_runtime: str = "adk"
+  agent_runtime: str = "native"
   automated_task_id: str | None = None
   project_id: str | None = None
   status: str = "idle"
@@ -162,7 +162,7 @@ class SessionDetail(BaseModel):
   session_id: str | None = None
   title: str
   agent_id: str
-  agent_runtime: str = "adk"
+  agent_runtime: str = "native"
   automated_task_id: str | None = None
   project_id: str | None = None
   project_root: str | None = None

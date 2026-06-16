@@ -1,8 +1,8 @@
 """Reusable, runtime-agnostic tool implementations.
 
-These are plain Python functions with no agent-runtime coupling, so any agent
-(ADK, LangGraph, ...) can call them directly. Tools that need a runtime
-`ToolContext` live with their runtime instead, e.g. `agents.handa_adk.tools`.
+These are plain Python functions with no agent-runtime coupling, so native
+agents can call them directly. Tools that need session context are wrapped by
+the native toolset.
 """
 
 from __future__ import annotations

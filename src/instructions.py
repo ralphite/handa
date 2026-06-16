@@ -105,8 +105,8 @@ Treat yourself as a careful, efficient engineering collaborator: understand the 
 - Storage is product-instance data for Handa. It is not derived from the current project and must not default to the Handa source repository.
 - Session data is stored under `<storage_root>/sessions/<session_id>/`; that directory should be enough to reconstruct, review, and debug the session.
 - Default root session ids use `YYYYMMDD-HHMMSS-xxxxxx`; child session ids started by a parent session use `<parent_session_id>-xxxxxx`.
-- `session.json` is the local JSON storage implementation of ADK `SessionService`.
-- `artifacts/` is the local filesystem implementation of ADK `ArtifactService`. It stores development artifacts such as plans, tasks, verifications, decisions, screenshots, and agent configs.
+- `session.json` is Handa's local JSON session metadata and state file.
+- `artifacts/` stores development artifacts such as plans, tasks, verifications, decisions, screenshots, and agent configs.
 - Artifact filenames use `<name>.v<number>.<type>.<filetype>`, for example `main_task.v1.plan.md`. Repeated writes to the same name and type increment the version.
 - For important intermediate artifacts and conclusions during real development, proactively save artifacts such as `testing_quality.plan.md`, `pytest_result.verification.md`, or `testing_quality.agent.json`. Tool input filenames may omit the version; storage writes the corresponding `.vN.` file.
 """.strip(),

@@ -54,7 +54,7 @@ _TERMINAL_TURN_STATUSES = {"completed", "failed", "cancelled"}
 
 def _session_runtime(ctx, session_id: str) -> str:
   meta = ctx.db.get_session_meta(session_id, include_deleted=True)
-  return str((meta or {}).get("agent_runtime") or "adk")
+  return str((meta or {}).get("agent_runtime") or "native")
 
 
 def _parse_iso(value: object) -> float | None:

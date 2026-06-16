@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -9,8 +10,8 @@ from google.genai import types
 
 from src.storage import HandaArtifactService
 from src.storage import HandaSessionService
-from src.agents.handa_adk.tools import agents
-from src.agents.handa_adk.tools import artifacts
+from src.agents.orca import tools as agent_tools
+from src.model_configs import DEFAULT_MODEL_CONFIG_ID
 
 
 class FakeToolContext:
@@ -55,6 +56,127 @@ class FakeToolContext:
         filename=filename,
         version=version,
     )
+
+
+def _session_context(tool_context: FakeToolContext) -> agent_tools.SessionContext:
+  state = getattr(getattr(tool_context, "session", None), "state", {}) or {}
+  return agent_tools.SessionContext(
+      session_id=tool_context.session_id,
+      user_id=tool_context.user_id,
+      app_name=tool_context.app_name,
+      model_config_id=state.get("handa:model_config_id") or DEFAULT_MODEL_CONFIG_ID,
+      agent_run_depth=int(state.get("handa:agent_run_depth") or 0),
+      project_root=os.environ.get("HANDA_PROJECT_ROOT"),
+  )
+
+
+async def _dispatch(
+    tool_context: FakeToolContext,
+    name: str,
+    args: dict,
+) -> dict:
+  previous_root = os.environ.get("HANDA_STORAGE_ROOT")
+  os.environ["HANDA_STORAGE_ROOT"] = tool_context.service.root
+  try:
+    toolset = agent_tools.build_toolset([name], _session_context(tool_context))
+    result = toolset.callables[name](**args)
+    if inspect.isawaitable(result):
+      result = await result
+    return result
+  finally:
+    if previous_root is None:
+      os.environ.pop("HANDA_STORAGE_ROOT", None)
+    else:
+      os.environ["HANDA_STORAGE_ROOT"] = previous_root
+
+
+class artifacts:
+  @staticmethod
+  async def save_text(*, filename: str, content: str, tool_context: FakeToolContext):
+    return await _dispatch(
+        tool_context,
+        "artifacts_save_text",
+        {"filename": filename, "content": content},
+    )
+
+  @staticmethod
+  async def list(*, tool_context: FakeToolContext):
+    return await _dispatch(tool_context, "artifacts_list", {})
+
+  @staticmethod
+  async def read(
+      *,
+      filename: str,
+      tool_context: FakeToolContext,
+      version: int | None = None,
+      offset: int = 0,
+      max_chars: int | None = None,
+      metadata_only: bool = False,
+  ):
+    return await _dispatch(
+        tool_context,
+        "artifacts_read",
+        {
+            "filename": filename,
+            "version": version,
+            "offset": offset,
+            "max_chars": max_chars,
+            "metadata_only": metadata_only,
+        },
+    )
+
+
+class agents:
+  @staticmethod
+  async def save_config(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "agents_save_config", kwargs)
+
+  @staticmethod
+  async def read_config(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "agents_read_config", kwargs)
+
+  @staticmethod
+  async def list_configs(*, tool_context: FakeToolContext):
+    return await _dispatch(tool_context, "agents_list_configs", {})
+
+  @staticmethod
+  async def start_run(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "agents_start_run", kwargs)
+
+  @staticmethod
+  def get_run_status(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    previous_root = os.environ.get("HANDA_STORAGE_ROOT")
+    os.environ["HANDA_STORAGE_ROOT"] = tool_context.service.root
+    try:
+      toolset = agent_tools.build_toolset(
+          ["agents_get_run_status"],
+          _session_context(tool_context),
+      )
+      return toolset.callables["agents_get_run_status"](**kwargs)
+    finally:
+      if previous_root is None:
+        os.environ.pop("HANDA_STORAGE_ROOT", None)
+      else:
+        os.environ["HANDA_STORAGE_ROOT"] = previous_root
+
+  @staticmethod
+  async def list_run_artifacts(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "agents_list_run_artifacts", kwargs)
+
+  @staticmethod
+  async def read_run_artifact(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "agents_read_run_artifact", kwargs)
+
+  @staticmethod
+  async def run_agent(**kwargs):
+    tool_context = kwargs.pop("tool_context")
+    return await _dispatch(tool_context, "run_agent", kwargs)
 
 
 def test_artifacts_text_tool_roundtrip(tmp_path):
@@ -138,7 +260,12 @@ def test_agents_config_tool_versions_session_artifacts(tmp_path):
 
 
 def test_agents_save_config_tool_exposes_optional_model_config_id():
-  signature = inspect.signature(agents.save_config)
+  signature = inspect.signature(
+      agent_tools.build_toolset(
+          ["agents_save_config"],
+          agent_tools.SessionContext(session_id="session-1", user_id="user"),
+      ).callables["agents_save_config"]
+  )
 
   # Legacy free-form `model` stays out; the canonical `model_config_id` is an
   # optional parameter that defaults to inheriting the session model.
@@ -381,7 +508,7 @@ async def _assert_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch
     }
 
   # start_agent_run_task spawns a worker subprocess; capture its kwargs instead.
-  monkeypatch.setattr(agents, "start_agent_run_task", fake_start_agent_run_task)
+  monkeypatch.setattr(agent_tools, "start_agent_run_task", fake_start_agent_run_task)
 
   await service.save_artifact(
       app_name="handa",
@@ -556,7 +683,7 @@ async def _assert_run_agent_tool_creates_agent_task(tmp_path, monkeypatch):
   context.session.state["handa:agent_run_depth"] = 3
   with pytest.raises(ValueError, match="max depth"):
     await agents.run_agent(
-        agent_id="orca_adk",
+        agent_id="orca",
         prompt="Recurse.",
         tool_context=context,
         max_depth=3,

@@ -6,9 +6,9 @@ from typing import Any
 # Default ceiling for a single text read returned to the model. Larger reads
 # page through `offset`/`max_chars`; the metadata (`char_count`/`line_count`) is
 # always present so the caller can tell how much content remains without
-# pulling the whole payload into context. Kept below the LangGraph per-response
-# budget (MAX_TOOL_RESULT_CHARS, 12000) so the dispatch-level truncation never
-# re-trims a window and leaves `next_offset` pointing past the real content.
+# pulling the whole payload into context. Kept below the native tool result
+# ceiling so dispatch-level truncation never re-trims a window and leaves
+# `next_offset` pointing past the real content.
 DEFAULT_READ_MAX_CHARS = 8000
 
 

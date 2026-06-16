@@ -9,19 +9,18 @@ from ..contract.browser import read_browser_summary
 from ..contract.product import DEFAULT_WEB_AGENT_ID
 from ..contract.product import PROGRESS_STATE_KEY
 from ..contract.product import normalize_progress_items
-from ..contract.run_events import serialize_adk_event
 from ..contract.services import APP_NAME
 from ..contract.task_store import list_tasks
 from ..contract.task_store import load_task
 from ..contract.storage import RuntimeEventStore
 from .context import WebApiContext
 from .context_usage_breakdown import build_context_usage_breakdown
-from .presenters.event_presenter import project_adk_event
+from .presenters.event_presenter import project_model_event
 from .presenters.runtime_event_presenter import project_runtime_event
 from .usage import summarize_token_usage
 
 if TYPE_CHECKING:
-  from google.adk.sessions.session import Session
+  from ..storage.session_service import Session
 
 
 AGENT_TASK_KINDS = {"agent_run", "run_agent", "system_agent_run"}
@@ -230,7 +229,7 @@ def _agent_runtime_for(
   return str(
       (task or {}).get("agent_runtime")
       or _state_str(session, "handa:agent_runtime")
-      or "adk"
+      or "native"
   )
 
 
@@ -454,23 +453,21 @@ async def _current_step(
   )
   if child is None:
     return None
-  runtime = str(task.get("agent_runtime") or _state_str(child, "handa:agent_runtime") or "adk")
-  if runtime != "adk":
-    for item in reversed(
-        RuntimeEventStore(ctx.settings.storage_root).list_events(
-            session_id=child_session_id,
-            runtime=runtime,
-        )
-    ):
-      raw_event = item.get("event")
-      if not isinstance(raw_event, dict):
-        continue
-      for projected in reversed(project_runtime_event(raw_event, runtime=runtime)):
-        if projected["kind"] in {"tool_call", "tool_response", "artifact_delta"}:
-          return str(projected["summary"])
-    return None
+  runtime = str(task.get("agent_runtime") or _state_str(child, "handa:agent_runtime") or "native")
+  for item in reversed(
+      RuntimeEventStore(ctx.settings.storage_root).list_events(
+          session_id=child_session_id,
+          runtime=runtime,
+      )
+  ):
+    raw_event = item.get("event")
+    if not isinstance(raw_event, dict):
+      continue
+    for projected in reversed(project_runtime_event(raw_event, runtime=runtime)):
+      if projected["kind"] in {"tool_call", "tool_response", "artifact_delta"}:
+        return str(projected["summary"])
   for event in reversed(child.events):
-    for projected in reversed(project_adk_event(event)):
+    for projected in reversed(project_model_event(event)):
       if projected["kind"] in {"tool_call", "tool_response", "artifact_delta"}:
         return str(projected["summary"])
   return None
@@ -519,41 +516,11 @@ def _prompt_for(session: Session) -> str | None:
   return None
 
 
-def _project_session_events(session: Session) -> list[dict[str, Any]]:
-  projected_events: list[dict[str, Any]] = []
-  seq = 0
-  synthetic_invocation_id = f"session:{session.id}"
-  for event in session.events:
-    raw_event = serialize_adk_event(event)
-    projections = project_adk_event(event)
-    if not projections:
-      continue
-    base_id = str(raw_event.get("id") or f"{synthetic_invocation_id}:{seq + 1}")
-    created_at = _event_created_at(raw_event)
-    for index, projected in enumerate(projections):
-      seq += 1
-      projected_events.append(
-          {
-              "id": base_id if index == 0 else f"{base_id}#{index}",
-              "turn_id": synthetic_invocation_id,
-              "seq": seq,
-              "session_seq": seq,
-              "kind": projected["kind"],
-              "summary": projected["summary"],
-              "payload": projected["payload"],
-              "created_at": created_at,
-          }
-      )
-  return projected_events
-
-
 def _project_events_for_runtime(
     ctx: WebApiContext,
     session: Session,
     runtime: str,
 ) -> list[dict[str, Any]]:
-  if runtime == "adk":
-    return _project_session_events(session)
   projected_events: list[dict[str, Any]] = []
   seq = 0
   synthetic_turn_id = f"session:{session.id}"
@@ -587,26 +554,11 @@ def _project_events_for_runtime(
   return projected_events
 
 
-def _usage_events_from_session(session: Session) -> list[dict[str, Any]]:
-  events: list[dict[str, Any]] = []
-  for event in session.events:
-    raw_event = serialize_adk_event(event)
-    events.append(
-        {
-            "id": raw_event.get("id"),
-            "raw_event": raw_event,
-        }
-    )
-  return events
-
-
 def _usage_events_for_runtime(
     ctx: WebApiContext,
     session: Session,
     runtime: str,
 ) -> list[dict[str, Any]]:
-  if runtime == "adk":
-    return _usage_events_from_session(session)
   events: list[dict[str, Any]] = []
   for item in RuntimeEventStore(ctx.settings.storage_root).list_events(
       session_id=session.id,

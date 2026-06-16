@@ -21,7 +21,7 @@ def present_session(
       session_id=str(meta["id"]),
       title=session_display_title(meta),
       agent_id=agent_id,
-      agent_runtime=str(meta.get("agent_runtime") or "adk"),
+      agent_runtime=str(meta.get("agent_runtime") or "native"),
       automated_task_id=automated_task_id,
       project_id=meta.get("project_id"),
       status=status,

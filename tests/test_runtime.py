@@ -41,7 +41,7 @@ def test_build_agent_run_report_no_stray_indentation():
       "child_session_id": "child_1",
       "status": "succeeded",
       "kind": "run_agent",
-      "agent_runtime": "adk",
+      "agent_runtime": "native",
       "agent_id": "browser",
       "prompt": "Line one.\nLine two has no indent.",
   }
@@ -600,36 +600,6 @@ def test_native_orca_run_agent_task_creates_runtime_snapshot(tmp_path, monkeypat
   assert task["agent_runtime"] == "native"
   assert child is not None
   assert child.state["handa:agent_runtime"] == "native"
-
-
-def test_langgraph_run_agent_task_creates_runtime_snapshot(tmp_path, monkeypatch):
-  storage_root = tmp_path / ".handa"
-  session_id = "session-1"
-  monkeypatch.setenv("HANDA_PROJECT_ROOT", str(tmp_path))
-  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
-
-  class FakeProcess:
-    pid = 12345
-
-  monkeypatch.setattr(
-      "src.runtime.subprocess.Popen",
-      lambda *args, **kwargs: FakeProcess(),
-  )
-
-  task = start_run_agent_task(
-      agent_id="orca_langgraph",
-      prompt="Summarize project.",
-      session_id=session_id,
-      user_id="user",
-      app_name="handa",
-  )
-  child = HandaSessionService(root=str(storage_root))._read_session(
-      task["child_session_id"]
-  )
-
-  assert task["agent_runtime"] == "langgraph"
-  assert child is not None
-  assert child.state["handa:agent_runtime"] == "langgraph"
 
 
 def test_system_agent_run_task_creates_immutable_config_child_session(

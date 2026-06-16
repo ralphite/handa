@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 
-from src.agents.handa_langgraph.tools import MAX_TOOL_RESULT_CHARS
-from src.agents.handa_langgraph.tools import SessionContext
-from src.agents.handa_langgraph.tools import _truncate_value
-from src.agents.handa_langgraph.tools import build_session_context
-from src.agents.handa_langgraph.tools import build_toolset
+from src.agents.orca.tools import MAX_TOOL_RESULT_CHARS
+from src.agents.orca.tools import SessionContext
+from src.agents.orca.tools import _truncate_value
+from src.agents.orca.tools import build_session_context
+from src.agents.orca.tools import build_toolset
 from src.progress import PROGRESS_STATE_KEY
 from src.runner import APP_NAME
 from src.storage import HandaSessionService
@@ -67,7 +67,7 @@ def test_agents_config_roundtrip(tmp_path, monkeypatch):
     assert saved["filename"] == "tester.agent.json"
     assert saved["model_config_id"] == "gemini-3.5-flash"
 
-    # list_artifact_keys returns versioned stored names, matching ADK semantics.
+    # list_artifact_keys returns versioned stored names.
     listed = await toolset.dispatch("agents_list_configs", {})
     assert any(
         name.startswith("tester") and name.endswith(".agent.json")
@@ -191,12 +191,12 @@ def test_run_agent_starts_child_task(tmp_path, monkeypatch):
     toolset = build_toolset(["run_agent"], _ctx("sess-run", depth=0))
     result = await toolset.dispatch(
         "run_agent",
-        {"agent_id": "orca_adk", "prompt": "do it", "summary": "child"},
+        {"agent_id": "orca", "prompt": "do it", "summary": "child"},
     )
     assert result["ok"] is True
     assert result["task_id"] == "task_x"
     assert result["child_session_id"] == "sess-run-child"
-    assert captured["agent_id"] == "orca_adk"
+    assert captured["agent_id"] == "orca"
     assert captured["session_id"] == "sess-run"
     assert captured["depth"] == 0
     # The success payload stays lean: no available_agents dump on every call.

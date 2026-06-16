@@ -70,7 +70,7 @@ def sync_turn_with_run_record(ctx: WebApiContext, turn: dict[str, Any]) -> dict[
     ingest_session_streams(
         ctx,
         session_id=session_id,
-        runtime=str(task.get("agent_runtime") or "adk"),
+        runtime=str(task.get("agent_runtime") or "native"),
     )
   if mapped in TERMINAL_TURN_STATUSES:
     # The final agent_text supersedes the streaming deltas; drop them so the

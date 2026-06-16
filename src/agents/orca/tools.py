@@ -73,7 +73,7 @@ def build_session_context(
   """Build a SessionContext, reading the recursion depth from session state.
 
   The parent records `handa:agent_run_depth` on each child session it spawns, so
-  a non-ADK child agent inherits the correct depth without an ADK ToolContext.
+  a native child agent inherits the correct depth.
   """
   state = HandaSessionService().read_state_sync(session_id)
   return SessionContext(
@@ -299,10 +299,9 @@ def _agent_tools(
   ) -> dict[str, Any]:
     """Run a registered Handa agent as a child session task.
 
-    `agent_id` must be one of Handa's registered agent definitions, such as the
-    ADK agents `main`/`ralph` or the LangGraph agent `orca`. The target
-    agent runs in a child session and can be inspected through task
-    status/result/artifacts.
+    `agent_id` must be one of Handa's registered native agent definitions,
+    such as `orca`, `ralph`, or `browser`. The target agent runs in a child
+    session and can be inspected through task status/result/artifacts.
     """
     normalized_agent_id = validate_agent_id(agent_id)
     bounded_depth = _bounded_depth(max_depth)

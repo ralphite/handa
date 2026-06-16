@@ -208,23 +208,18 @@ def test_native_ralph_updates_pending_plan_before_confirmation(tmp_path, monkeyp
   asyncio.run(run_test())
 
 
-def test_native_ralph_internal_configs_match_legacy_adk_configs():
+def test_native_ralph_internal_configs_are_present():
   for filename in (
       "ralph_builder.agent.json",
       "ralph_planner.agent.json",
       "ralph_verifier.agent.json",
   ):
-    native_config = json.loads((MAIN_CONFIG_PATH.parent / filename).read_text(encoding="utf-8"))
-    legacy_config = json.loads(
-        (
-            MAIN_CONFIG_PATH.parents[1]
-            / "handa_adk"
-            / "ralph"
-            / filename
-        ).read_text(encoding="utf-8")
+    native_config = json.loads(
+        (MAIN_CONFIG_PATH.parent / filename).read_text(encoding="utf-8")
     )
 
-    assert native_config == legacy_config
+    assert native_config["name"]
+    assert native_config["model_config_id"]
 
 
 def test_native_ralph_package_has_no_framework_dependency():

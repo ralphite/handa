@@ -26,7 +26,7 @@ def _fallback_agent_runtime(row: dict[str, Any]) -> str:
   try:
     return get_agent_definition(_fallback_agent_id(row)).runtime
   except ValueError:
-    return "adk"
+    return "native"
 
 
 _WEB_STEPS_SCHEMA_SQL = """
@@ -100,7 +100,7 @@ create table if not exists web_sessions (
   id text primary key,
   project_id text,
   agent_id text not null,
-  agent_runtime text not null default 'adk',
+  agent_runtime text not null default 'native',
   title text,
   title_source text not null default 'auto',
   parent_session_id text,
@@ -249,7 +249,7 @@ class WebDatabase:
     self._ensure_column("web_turns", "file_lines_removed", "integer not null default 0")
     self._ensure_column("web_steps", "id", "text")
     self._ensure_column("web_steps", "session_seq", "integer")
-    self._ensure_column("web_sessions", "agent_runtime", "text not null default 'adk'")
+    self._ensure_column("web_sessions", "agent_runtime", "text not null default 'native'")
     self._ensure_column("web_sessions", "archived_at", "text")
     self._ensure_column("web_sessions", "deleted_at", "text")
     self._ensure_column("web_sessions", "unread_at", "text")
@@ -392,7 +392,6 @@ class WebDatabase:
                     "session_seq": row.get("session_seq") or row.get("thread_seq"),
                     "session_id": row.get("session_id") or row.get("thread_id"),
                     "adk_event_id": row.get("adk_event_id"),
-                    "adk_invocation_id": row.get("adk_invocation_id"),
                     "id": row.get("runtime_event_id") or row.get("adk_event_id"),
                     "kind": row.get("kind") or "runtime_step",
                     "summary": row.get("summary") or "",
@@ -499,7 +498,7 @@ class WebDatabase:
                     "turn_id": row["run_id"],
                     "seq": row["seq"],
                     "session_id": row["session_id"],
-                    "runtime": "adk",
+                    "runtime": "native",
                     "adk_event_id": row["adk_event_id"],
                     "id": row["adk_event_id"],
                     "kind": row["kind"],
@@ -1017,7 +1016,7 @@ class WebDatabase:
     turn_id = str(row.get("turn_id") or "")
     session_id = str(row.get("session_id") or row.get("thread_id") or self._session_id_for_turn(turn_id) or "")
     raw_event = _json_dict(row.get("raw_event_json")) if row.get("raw_event_json") is not None else {}
-    runtime = str(row.get("runtime") or self._runtime_for_session(session_id) or "adk")
+    runtime = str(row.get("runtime") or self._runtime_for_session(session_id) or "native")
     step_id = _optional_str(
         row.get("id")
         or row.get("runtime_event_id")
@@ -1089,7 +1088,7 @@ class WebDatabase:
       ).fetchone()
       if row and row["agent_runtime"]:
         return str(row["agent_runtime"])
-    return "adk"
+    return "native"
 
   def _session_id_for_turn(self, turn_id: str) -> str | None:
     if not turn_id:
@@ -1678,7 +1677,7 @@ class WebDatabase:
       session_id: str,
       project_id: str | None,
       agent_id: str,
-      agent_runtime: str = "adk",
+      agent_runtime: str = "native",
       title: str | None = None,
       title_source: str = "auto",
       parent_session_id: str | None = None,
@@ -2942,19 +2941,6 @@ def _parse_iso_seconds(value: Any) -> float | None:
     return datetime.fromisoformat(text).timestamp()
   except ValueError:
     return None
-
-
-def _raw_adk_invocation_id_json(raw_event_json: str) -> str | None:
-  try:
-    raw_event = json.loads(raw_event_json)
-  except json.JSONDecodeError:
-    return None
-  return _raw_adk_invocation_id(raw_event)
-
-
-def _raw_adk_invocation_id(raw_event: dict[str, Any]) -> str | None:
-  value = raw_event.get("invocation_id")
-  return None if value is None else str(value)
 
 
 def _json_dict(value: Any) -> dict[str, Any]:

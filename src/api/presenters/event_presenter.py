@@ -10,7 +10,7 @@ from .tool_summary import summarize_tool_call
 from .tool_summary import summarize_tool_response
 
 
-def project_adk_event(event: Any) -> list[dict[str, Any]]:
+def project_model_event(event: Any) -> list[dict[str, Any]]:
   facts = extract_event_facts(event)
   projected: list[dict[str, Any]] = []
 
@@ -85,8 +85,8 @@ def project_adk_event(event: Any) -> list[dict[str, Any]]:
       return []
     projected.append(
         {
-            "kind": "adk_event",
-            "summary": "ADK event",
+            "kind": "model_event",
+            "summary": "Model event",
             "payload": {
                 "author": facts.author,
                 "partial": facts.partial,
@@ -96,7 +96,6 @@ def project_adk_event(event: Any) -> list[dict[str, Any]]:
     )
 
   return projected
-
 
 def _is_user_author(author: str | None) -> bool:
   return (author or "").strip().lower() == "user"

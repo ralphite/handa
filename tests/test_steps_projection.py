@@ -5,15 +5,13 @@ import json
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-from google.adk.events import Event
-from google.genai import types
 
 from src.storage.paths import runtime_events_path
 from src.storage.runtime_event_store import RuntimeEventStore
 from src.api.app import create_app
 from src.api.steps_projection import emit_web_step
 from src.api.steps_projection import ingest_session_events
-from src.api.steps_projection import record_adk_event
+from src.api.steps_projection import record_runtime_event
 from src.api.steps_projection import WEB_TRACE_RUNTIME
 
 
@@ -29,7 +27,7 @@ def _make_ctx(tmp_path, monkeypatch):
   return ctx, client, project, storage_root
 
 
-def _make_turn(ctx, client, project, *, agent_id: str = "orca_adk") -> tuple[str, dict]:
+def _make_turn(ctx, client, project, *, agent_id: str = "orca") -> tuple[str, dict]:
   session = client.post(
       "/api/sessions",
       json={"agent_id": agent_id, "project_id": project["id"]},
@@ -73,7 +71,7 @@ def test_reingest_after_cursor_reset_is_idempotent(tmp_path, monkeypatch):
     RuntimeEventStore(storage_root).append(
         session_id=session_id,
         turn_id=turn["id"],
-        runtime="langgraph",
+        runtime="native",
         event={
             "id": f"lg_evt_{index}",
             "kind": "agent_text",
@@ -87,15 +85,15 @@ def test_reingest_after_cursor_reset_is_idempotent(tmp_path, monkeypatch):
             },
         },
     )
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   first_steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   first_usage = ctx.db.get_turn(turn["id"])
   assert len(first_steps) == 2
   assert first_usage["output_token_count"] == 20
 
-  ctx.db.reset_event_cursor(session_id=session_id, runtime="langgraph")
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ctx.db.reset_event_cursor(session_id=session_id, runtime="native")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   again_steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   again_usage = ctx.db.get_turn(turn["id"])
@@ -112,10 +110,10 @@ def test_ingest_accumulates_tool_and_file_stats(tmp_path, monkeypatch):
   store.append(
       session_id=session_id,
       turn_id=turn["id"],
-      runtime="langgraph",
+      runtime="native",
       event={
           "id": "lg_tool_0",
-          "kind": "langgraph.tool_result",
+          "kind": "orca.tool_result",
           "payload": {
               "name": "files_write",
               "result": {"success": True, "lines_added": 5, "lines_removed": 2},
@@ -125,10 +123,10 @@ def test_ingest_accumulates_tool_and_file_stats(tmp_path, monkeypatch):
   store.append(
       session_id=session_id,
       turn_id=turn["id"],
-      runtime="langgraph",
+      runtime="native",
       event={
           "id": "lg_tool_1",
-          "kind": "langgraph.tool_result",
+          "kind": "orca.tool_result",
           "payload": {
               "name": "commands_run",
               "result": {
@@ -140,7 +138,7 @@ def test_ingest_accumulates_tool_and_file_stats(tmp_path, monkeypatch):
           },
       },
   )
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   stats = ctx.db.get_turn(turn["id"])
   assert stats["tool_call_count"] == 2
@@ -151,8 +149,8 @@ def test_ingest_accumulates_tool_and_file_stats(tmp_path, monkeypatch):
   assert stats["file_lines_removed"] == 2
 
   # Re-ingesting the same events (after a cursor reset) must not double-count.
-  ctx.db.reset_event_cursor(session_id=session_id, runtime="langgraph")
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ctx.db.reset_event_cursor(session_id=session_id, runtime="native")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   again = ctx.db.get_turn(turn["id"])
   assert again["tool_call_count"] == 2
@@ -205,18 +203,18 @@ def test_ingest_splits_multi_projection_event_into_separate_steps(tmp_path, monk
   RuntimeEventStore(storage_root).append(
       session_id=session_id,
       turn_id=turn["id"],
-      runtime="langgraph",
+      runtime="native",
       event_id="lg_save",
       event={
           "id": "lg_save",
-          "kind": "langgraph.tool_result",
+          "kind": "orca.tool_result",
           "payload": {
               "name": "artifacts_save_text",
               "result": {"ok": True, "filename": "report.md", "version": 1},
           },
       },
   )
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   assert [s["kind"] for s in steps] == ["tool_response", "artifact_delta"]
@@ -226,8 +224,8 @@ def test_ingest_splits_multi_projection_event_into_separate_steps(tmp_path, monk
   assert steps[1]["payload"]["filename"] == "report.md"
 
   # Re-ingesting (cursor rewind) keeps the same ids and adds no duplicates.
-  ctx.db.reset_event_cursor(session_id=session_id, runtime="langgraph")
-  ingest_session_events(ctx, session_id=session_id, runtime="langgraph")
+  ctx.db.reset_event_cursor(session_id=session_id, runtime="native")
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
   again = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   assert [s["id"] for s in again] == ["lg_save", "lg_save#1"]
 
@@ -316,7 +314,7 @@ def test_ingest_waits_for_incomplete_tail_line(tmp_path, monkeypatch):
   ]
 
 
-def test_record_adk_partial_event_traces_to_web_stream(tmp_path, monkeypatch):
+def test_record_runtime_partial_event_traces_to_web_stream(tmp_path, monkeypatch):
   ctx, client, project, storage_root = _make_ctx(tmp_path, monkeypatch)
   session_id, turn = _make_turn(ctx, client, project)
 
@@ -331,17 +329,23 @@ def test_record_adk_partial_event_traces_to_web_stream(tmp_path, monkeypatch):
       actions=SimpleNamespace(artifact_delta={}),
       is_final_response=lambda: False,
   )
-  record_adk_event(ctx, session_id=session_id, turn_id=turn["id"], event=partial_event)
+  record_runtime_event(
+      ctx,
+      session_id=session_id,
+      turn_id=turn["id"],
+      runtime=WEB_TRACE_RUNTIME,
+      event=partial_event,
+  )
 
   steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   assert [step["kind"] for step in steps] == ["agent_text_delta"]
   events_file = runtime_events_path(storage_root, session_id, WEB_TRACE_RUNTIME)
   assert events_file.exists()
-  adk_file = runtime_events_path(storage_root, session_id, "adk")
-  assert not adk_file.exists()
+  native_file = runtime_events_path(storage_root, session_id, "native")
+  assert not native_file.exists()
 
 
-def test_record_adk_event_ingests_session_service_persisted_event(tmp_path, monkeypatch):
+def test_ingest_session_service_persisted_native_event(tmp_path, monkeypatch):
   ctx, client, project, storage_root = _make_ctx(tmp_path, monkeypatch)
   session_id, turn = _make_turn(ctx, client, project)
 
@@ -351,27 +355,29 @@ def test_record_adk_event_ingests_session_service_persisted_event(tmp_path, monk
       {"handa:active_turn_id": turn["id"]},
   )
   session = ctx.services.session_service._read_session(session_id)  # noqa: SLF001
-  event = Event(
-      invocation_id="inv-1",
-      author="handa",
-      content=types.Content(role="model", parts=[types.Part(text="answer")]),
-      usage_metadata=types.GenerateContentResponseUsageMetadata(
-          prompt_token_count=100,
-          candidates_token_count=10,
-          total_token_count=110,
-      ),
-  )
+  event = {
+      "id": "evt_final",
+      "invocation_id": "inv-1",
+      "author": "handa",
+      "content": {"role": "model", "parts": [{"text": "answer"}]},
+      "usageMetadata": {
+          "promptTokenCount": 100,
+          "candidatesTokenCount": 10,
+          "totalTokenCount": 110,
+      },
+      "is_final_response": True,
+  }
   appended = asyncio.run(ctx.services.session_service.append_event(session, event))
 
-  record_adk_event(ctx, session_id=session_id, turn_id=turn["id"], event=appended)
+  ingest_session_events(ctx, session_id=session_id, runtime="native")
 
   steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
   assert [step["kind"] for step in steps] == ["agent_text"]
-  assert steps[0]["id"] == appended.id
+  assert steps[0]["id"] == appended["id"]
   fetched = ctx.db.get_turn(turn["id"])
   assert fetched["input_token_count"] == 100
   assert fetched["output_token_count"] == 10
-  # No fallback copy should land in the web trace stream.
+  # Native runner persistence should not create a duplicate web trace copy.
   web_file = runtime_events_path(storage_root, session_id, WEB_TRACE_RUNTIME)
   assert not web_file.exists()
 
@@ -420,21 +426,21 @@ def test_forked_session_does_not_duplicate_cloned_steps(tmp_path, monkeypatch):
   assert fork_steps[0]["summary"] == "from source"
 
 
-def test_ingest_skips_user_authored_adk_events(tmp_path, monkeypatch):
+def test_ingest_skips_user_authored_web_trace_model_events(tmp_path, monkeypatch):
   ctx, client, project, storage_root = _make_ctx(tmp_path, monkeypatch)
   session_id, turn = _make_turn(ctx, client, project)
 
   RuntimeEventStore(storage_root).append(
       session_id=session_id,
       turn_id=turn["id"],
-      runtime="adk",
+      runtime=WEB_TRACE_RUNTIME,
       event={
           "id": "evt_user_1",
           "author": "user",
           "content": {"parts": [{"text": "the turn input"}]},
       },
   )
-  ingest_session_events(ctx, session_id=session_id, runtime="adk")
+  ingest_session_events(ctx, session_id=session_id, runtime=WEB_TRACE_RUNTIME)
 
   assert ctx.db.list_steps_for_turn(turn_id=turn["id"]) == []
 
@@ -445,7 +451,7 @@ def test_stream_merge_orders_deltas_before_final(tmp_path, monkeypatch):
 
   store = RuntimeEventStore(storage_root)
   # Worker wrote a streaming delta to the web stream (ISO created_at), then the
-  # runner persisted the final to the adk stream (float-epoch created_at).
+  # runner persisted the final to the native stream (float-epoch created_at).
   store.append(
       session_id=session_id,
       turn_id=turn["id"],
@@ -454,7 +460,7 @@ def test_stream_merge_orders_deltas_before_final(tmp_path, monkeypatch):
       created_at="2026-06-12T06:00:01.000000+00:00",
       event={
           "id": "evt_delta",
-          "author": "orca_adk",
+          "author": "orca",
           "partial": True,
           "content": {"parts": [{"text": "Hel"}]},
       },
@@ -462,7 +468,7 @@ def test_stream_merge_orders_deltas_before_final(tmp_path, monkeypatch):
   store.append(
       session_id=session_id,
       turn_id=turn["id"],
-      runtime="adk",
+      runtime="native",
       event_id="evt_final",
       created_at=str(
           __import__("datetime").datetime(
@@ -471,7 +477,7 @@ def test_stream_merge_orders_deltas_before_final(tmp_path, monkeypatch):
       ),
       event={
           "id": "evt_final",
-          "author": "orca_adk",
+          "author": "orca",
           "partial": False,
           "content": {"parts": [{"text": "Hello there."}]},
           "is_final_response": True,
@@ -480,7 +486,7 @@ def test_stream_merge_orders_deltas_before_final(tmp_path, monkeypatch):
 
   from src.api.steps_projection import ingest_session_streams
 
-  ingest_session_streams(ctx, session_id=session_id, runtime="adk")
+  ingest_session_streams(ctx, session_id=session_id, runtime="native")
   steps = ctx.db.list_steps_for_turn(turn_id=turn["id"])
 
   assert [step["kind"] for step in steps] == ["agent_text_delta", "agent_text"]
@@ -499,8 +505,8 @@ def test_terminal_sync_prunes_delta_steps(tmp_path, monkeypatch):
       session_id=session_id,
       turn_id=turn["id"],
       project_root=str(tmp_path / "project"),
-      agent_id="orca_adk",
-      agent_runtime="adk",
+      agent_id="orca",
+      agent_runtime="native",
       input_text="hello",
       user_id="user",
   )
@@ -513,7 +519,7 @@ def test_terminal_sync_prunes_delta_steps(tmp_path, monkeypatch):
         event_id=f"delta_{index}",
         event={
             "id": f"delta_{index}",
-            "author": "orca_adk",
+            "author": "orca",
             "partial": True,
             "content": {"parts": [{"text": f"chunk {index}"}]},
         },

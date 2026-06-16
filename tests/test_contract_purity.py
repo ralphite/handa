@@ -6,22 +6,19 @@ import sys
 from pathlib import Path
 
 
-# Modules whose presence in sys.modules means runtime implementation code
-# leaked into the Web process. google.adk itself is absent on purpose:
-# HandaSessionService subclasses ADK's BaseSessionService (the runner demands
-# it), which drags in ADK's data-model layer — accepted as the Python client
-# convenience; the execution surface is covered by the src.* entries below.
+# Modules whose presence in sys.modules means native runtime implementation code
+# leaked into the Web process.
 FORBIDDEN_MODULE_PREFIXES = (
     "playwright",
-    "langgraph",
     "src.run_manager",
     "src.turn_worker",
     "src.agent_run_worker",
     "src.task_worker",
-    "src.agents.handa_adk.orca_adk",
-    "src.agents.handa_adk.ralph",
-    "src.agents.handa_adk.browser",
-    "src.agents.handa_adk.tools",
+    "src.agents.orca.runner",
+    "src.agents.ralph.runner",
+    "src.agents.browser.runner",
+    "src.agents.orca.tools",
+    "src.agents.config_runner",
     "src.tools.commands",
     "src.tools.files",
     "src.tools.browser",

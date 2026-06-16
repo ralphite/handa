@@ -24,7 +24,7 @@ class FunctionResponseFacts:
 
 
 @dataclass(frozen=True)
-class AdkEventFacts:
+class ModelEventFacts:
   id: str | None
   invocation_id: str | None
   author: str | None
@@ -44,7 +44,7 @@ class AdkEventFacts:
   total_token_count: int
 
 
-def extract_event_facts(event: Any) -> AdkEventFacts:
+def extract_event_facts(event: Any) -> ModelEventFacts:
   content = _get(event, "content")
   parts = list(_get(content, "parts") or [])
   actions = _get(event, "actions")
@@ -93,7 +93,7 @@ def extract_event_facts(event: Any) -> AdkEventFacts:
       _usage_value(event, "total_token_count", "totalTokenCount")
   ) or (input_token_count + output_token_count)
 
-  return AdkEventFacts(
+  return ModelEventFacts(
       id=_optional_str(_get(event, "id")),
       invocation_id=_optional_str(_get(event, "invocation_id")),
       author=_optional_str(_get(event, "author")),
@@ -114,7 +114,7 @@ def extract_event_facts(event: Any) -> AdkEventFacts:
   )
 
 
-def serialize_adk_event(event: Any) -> dict[str, Any]:
+def serialize_event(event: Any) -> dict[str, Any]:
   if isinstance(event, dict):
     return event
 
@@ -134,14 +134,9 @@ def serialize_adk_event(event: Any) -> dict[str, Any]:
 
   # is_final_response() is a method, not a field, so model_dump loses it. Persist
   # it so facts extracted from the serialized form agree with the live object.
-  if (
-      isinstance(serialized, dict)
-      and "is_final_response" not in serialized
-      and callable(getattr(event, "is_final_response", None))
-  ):
+  if isinstance(serialized, dict) and callable(getattr(event, "is_final_response", None)):
     serialized["is_final_response"] = _is_final_response(event)
   return serialized
-
 
 def _get(value: Any, name: str) -> Any:
   if value is None:
@@ -154,7 +149,7 @@ def _get(value: Any, name: str) -> Any:
 
 
 def _camel_name(name: str) -> str:
-  # Serialized ADK events use by_alias=True, so dict keys are camelCase.
+  # Legacy model events use by_alias=True, so dict keys are camelCase.
   head, *rest = name.split("_")
   return head + "".join(part.capitalize() for part in rest)
 

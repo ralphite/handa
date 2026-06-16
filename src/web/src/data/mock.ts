@@ -4,12 +4,12 @@ const completedDetailEvents: InvocationDetailEvent[] = [
   {
     seq: 1,
     kind: 'tool_call',
-    summary: 'Read src/agents/handa_adk/ralph/agent.py',
+    summary: 'Read src/agents/ralph/runner.py',
     payload: {
       id: 'call-read-ralph-agent',
       name: 'files_read',
       args: {
-        path: 'src/agents/handa_adk/ralph/agent.py',
+        path: 'src/agents/ralph/runner.py',
       },
     },
     rawEvent: { type: 'tool_call' },
@@ -24,7 +24,7 @@ const completedDetailEvents: InvocationDetailEvent[] = [
       name: 'files_read',
       response: {
         ok: true,
-        path: 'src/agents/handa_adk/ralph/agent.py',
+        path: 'src/agents/ralph/runner.py',
         start_line: 1,
         end_line: 120,
       },
@@ -68,7 +68,7 @@ const completedTimelineItems: InvocationTimelineItem[] = [
   {
     seq: 2,
     kind: 'tool',
-    summary: 'Read src/agents/handa_adk/ralph/agent.py',
+    summary: 'Read src/agents/ralph/runner.py',
     createdAt: '2026-05-17T09:00:12Z',
     status: 'done',
     toolCallId: 'call-read-ralph-agent',
@@ -79,7 +79,7 @@ const completedTimelineItems: InvocationTimelineItem[] = [
         id: 'call-read-ralph-agent',
         name: 'files_read',
         args: {
-          path: 'src/agents/handa_adk/ralph/agent.py',
+          path: 'src/agents/ralph/runner.py',
         },
       },
       response: {
@@ -87,7 +87,7 @@ const completedTimelineItems: InvocationTimelineItem[] = [
         name: 'files_read',
         response: {
           ok: true,
-          path: 'src/agents/handa_adk/ralph/agent.py',
+          path: 'src/agents/ralph/runner.py',
           start_line: 1,
           end_line: 120,
         },
@@ -221,7 +221,7 @@ export const sessions: AgentSession[] = [
           {
             type: 'list',
             items: [
-              'The entry point is a parent custom ADK agent session, which only handles the workflow state machine.',
+              'The entry point is a parent native Ralph session, which only handles the workflow state machine.',
               'The real builder / verifier runs in a new child session.',
               'loop-level result / report must be saved in the parent session.',
               'Can deterministically stop when reaching max rounds.',
@@ -282,12 +282,12 @@ export const sessions: AgentSession[] = [
     ],
     fileChanges: [
       {
-        path: 'src/agents/handa_adk/ralph/agent.py',
+        path: 'src/agents/ralph/runner.py',
         additions: 243,
         deletions: 29,
       },
       {
-        path: 'src/agents/handa_adk/ralph/ralph_planner.agent.json',
+        path: 'src/agents/ralph/ralph_planner.agent.json',
         additions: 9,
         deletions: 0,
       },
@@ -394,7 +394,7 @@ export const sessions: AgentSession[] = [
     ],
     fileChanges: [
       {
-        path: 'src/agents/handa_adk/verifier/agent.py',
+        path: 'src/agents/ralph/loop.py',
         additions: 74,
         deletions: 18,
       },

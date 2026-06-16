@@ -4,18 +4,9 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from typing import Literal
 
-from .agents.handa_adk.loader import AGENTS_DIR as ADK_AGENTS_DIR
-from .agents.handa_adk.loader import list_agents as list_adk_agents
-from .config import load_agent_config_from_path
 
-
-AgentRuntime = Literal["adk", "langgraph", "native"]
+AgentRuntime = Literal["native"]
 DEFAULT_WEB_AGENT_ID = "orca"
-MAIN_AGENT_LABELS = {
-    "orca_adk": "Orca ADK",
-    "orca": "Orca",
-    "orca_langgraph": "Orca LangGraph",
-}
 
 
 @dataclass(frozen=True)
@@ -36,26 +27,11 @@ class AgentDefinition:
 
 
 def list_agent_definitions() -> list[AgentDefinition]:
-  native_definitions = _native_agent_definitions()
-  native_ids = {definition.id for definition in native_definitions}
-  definitions = [
-      AgentDefinition(
-          id=agent_id,
-          runtime="adk",
-          entrypoint=f"src.agents.handa_adk.{agent_id}:build_agent",
-          label=_adk_agent_label(agent_id),
-          description="Handa ADK agent",
-      )
-      for agent_id in list_adk_agents()
-      if agent_id not in native_ids
-  ]
-  definitions.extend(native_definitions)
-  definitions.extend(_langgraph_agent_definitions())
-  return sorted(definitions, key=_definition_sort_key)
+  return sorted(_native_agent_definitions(), key=lambda definition: definition.id)
 
 
 def get_agent_definition(agent_id: str) -> AgentDefinition:
-  normalized = agent_id.strip()
+  normalized = _normalize_agent_id(agent_id)
   for definition in list_agent_definitions():
     if definition.id == normalized:
       return definition
@@ -68,17 +44,10 @@ def validate_agent_id(agent_id: str) -> str:
 
 
 def resolve_agent_id_for_runtime(agent_id: str, agent_runtime: str) -> str:
-  """Resolve legacy ids that were renamed inside a specific runtime."""
-  normalized = agent_id.strip()
-  runtime = agent_runtime.strip()
-  if runtime == "langgraph" and normalized == "orca":
-    return "orca_langgraph"
-  definition = get_agent_definition(normalized)
-  if definition.runtime != runtime:
-    raise ValueError(
-        f"Agent {normalized!r} uses runtime {definition.runtime!r}, "
-        f"not {runtime!r}."
-    )
+  runtime = agent_runtime.strip() or "native"
+  if runtime != "native":
+    raise ValueError(f"Unsupported agent runtime: {runtime!r}. Handa only supports native agents.")
+  definition = get_agent_definition(agent_id)
   return definition.id
 
 
@@ -88,27 +57,12 @@ def agent_config_runtime_snapshot(
     config_version: int | None,
 ) -> dict[str, str]:
   _ = config_name, config_version
-  return {"agent_runtime": "adk"}
+  return {"agent_runtime": "native"}
 
 
 def system_agent_config_runtime_snapshot(config_name: str) -> dict[str, str]:
   _ = config_name
-  return {"agent_runtime": "adk"}
-
-
-def _adk_agent_label(agent_id: str) -> str:
-  if agent_id in MAIN_AGENT_LABELS:
-    return MAIN_AGENT_LABELS[agent_id]
-  config_path = ADK_AGENTS_DIR / agent_id / f"{agent_id}.agent.json"
-  if not config_path.exists():
-    return agent_id
-  return load_agent_config_from_path(config_path).name
-
-
-def _langgraph_agent_definitions() -> list[AgentDefinition]:
-  from .agents.handa_langgraph.loader import list_agent_definitions
-
-  return list_agent_definitions()
+  return {"agent_runtime": "native"}
 
 
 def _native_agent_definitions() -> list[AgentDefinition]:
@@ -117,10 +71,8 @@ def _native_agent_definitions() -> list[AgentDefinition]:
   return list_agent_definitions()
 
 
-def _definition_sort_key(definition: AgentDefinition) -> tuple[int, str]:
-  primary = {
-      "native": 0,
-      "adk": 1,
-      "langgraph": 2,
-  }.get(definition.runtime, 9)
-  return (primary, definition.id)
+def _normalize_agent_id(agent_id: str) -> str:
+  normalized = agent_id.strip()
+  if normalized in {"main", "orca_adk", "orca_langgraph"}:
+    return "orca"
+  return normalized
