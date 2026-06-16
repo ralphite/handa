@@ -181,7 +181,7 @@ def test_run_handa_cli_completes_turn_via_web_api():
   assert api.submitted_form == {
       "input_text": ["hello"],
       "project_id": ["proj-1"],
-      "agent_id": ["orca_adk"],
+      "agent_id": ["orca"],
   }
   # Name resolution never registers a project.
   assert api.created_project is None
@@ -367,7 +367,7 @@ def test_handacli_main_prints_json_from_model(monkeypatch, capsys, tmp_path):
     assert kwargs["project_name"] == "logue-vibe-1"
     assert kwargs["prompt"] == "hello"
     assert kwargs["session_id"] is None
-    assert kwargs["agent_id"] == "orca_adk"
+    assert kwargs["agent_id"] == "orca"
     assert kwargs["model_config_id"] is None
     assert kwargs["api_url"] is None
     return HandaCliResult(

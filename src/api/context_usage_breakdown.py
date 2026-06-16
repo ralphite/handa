@@ -10,7 +10,10 @@ from ..contract.introspection import read_tool_definitions
 from ..contract.product import ADK_AGENTS_DIR
 from ..contract.product import AgentConfig
 from ..contract.product import agent_config_artifact_filename
+from ..contract.product import BROWSER_MAIN_CONFIG_PATH
 from ..contract.product import LANGGRAPH_MAIN_CONFIG_PATH
+from ..contract.product import ORCA_MAIN_CONFIG_PATH
+from ..contract.product import RALPH_MAIN_CONFIG_PATH
 from ..contract.product import load_agent_config_from_path
 from ..contract.product import render_instruction
 from ..contract.product import render_project_agents_instruction
@@ -52,10 +55,17 @@ RESIDUAL_SOURCE_KEYS = ("user_messages", "tool_call_responses", "llm_responses")
 DENSE_JSON_SOURCE_KEYS = frozenset({"llm_response_tool_call_request", "tool_call_responses"})
 PROSE_CHARS_PER_TOKEN = 4.0
 JSON_CHARS_PER_TOKEN = 3.5
-LANGGRAPH_TOOL_RESULT_KINDS = frozenset({
+RUNTIME_TOOL_RESULT_KINDS = frozenset({
     "langgraph.tool_result",
     "langgraph.user_input_result",
+    "orca.tool_result",
+    "orca.user_input_result",
+    "browser.tool_result",
+    "browser.user_input_result",
+    "ralph.tool_result",
+    "ralph.user_input_result",
 })
+NATIVE_RUNTIME_EVENT_PREFIXES = frozenset({"orca", "browser", "ralph"})
 _CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 
 
@@ -281,7 +291,13 @@ def load_agent_config_for_runtime(
     agent_id: str,
     agent_runtime: str,
 ) -> AgentConfig | None:
-  if agent_runtime == "langgraph" and agent_id == "orca":
+  if agent_runtime == "native" and agent_id == "orca":
+    return load_agent_config_from_path(ORCA_MAIN_CONFIG_PATH)
+  if agent_runtime == "native" and agent_id == "browser":
+    return load_agent_config_from_path(BROWSER_MAIN_CONFIG_PATH)
+  if agent_runtime == "native" and agent_id == "ralph":
+    return load_agent_config_from_path(RALPH_MAIN_CONFIG_PATH)
+  if agent_runtime == "langgraph" and agent_id in {"orca", "orca_langgraph"}:
     return load_agent_config_from_path(LANGGRAPH_MAIN_CONFIG_PATH)
   if agent_runtime == "adk":
     config_path = ADK_AGENTS_DIR / agent_id / f"{agent_id}.agent.json"
@@ -346,7 +362,7 @@ def _llm_response_text(
     for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
       kind = str(raw_event.get("kind") or "")
       payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
-      if kind in {"langgraph.model_text", "agent_text"}:
+      if kind in _runtime_kinds("model_text") or kind == "agent_text":
         _append_unique(texts, payload.get("text"))
   return "\n\n".join(text for text in texts if text)
 
@@ -364,7 +380,7 @@ def _tool_call_request_text(
         chunks.append(_tool_call_text(call.name, call.args))
   else:
     for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
-      if raw_event.get("kind") != "langgraph.tool_call":
+      if str(raw_event.get("kind") or "") not in _runtime_kinds("tool_call"):
         continue
       payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
       args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
@@ -385,7 +401,7 @@ def _tool_call_response_text(
         chunks.append(_tool_response_text(response.name, response.response))
   else:
     for raw_event in _runtime_raw_events(ctx, session, agent_runtime):
-      if str(raw_event.get("kind") or "") not in LANGGRAPH_TOOL_RESULT_KINDS:
+      if str(raw_event.get("kind") or "") not in RUNTIME_TOOL_RESULT_KINDS:
         continue
       payload = raw_event.get("payload") if isinstance(raw_event.get("payload"), dict) else {}
       chunks.append(_tool_response_text(str(payload.get("name") or ""), payload.get("result")))
@@ -469,6 +485,13 @@ def _tool_call_text(name: str, args: dict[str, Any]) -> str:
 def _tool_response_text(name: str, response: Any) -> str:
   payload = {"name": name, "response": response}
   return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _runtime_kinds(suffix: str) -> frozenset[str]:
+  return frozenset({
+      f"langgraph.{suffix}",
+      *(f"{prefix}.{suffix}" for prefix in NATIVE_RUNTIME_EVENT_PREFIXES),
+  })
 
 
 def _is_user_author(author: str | None) -> bool:

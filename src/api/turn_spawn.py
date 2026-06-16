@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from ..contract import task_store
+from ..contract.product import DEFAULT_WEB_AGENT_ID
+from ..contract.product import get_agent_definition
+from ..contract.product import resolve_agent_id_for_runtime
 from ..contract.task_store import create_web_turn_task
 from ..contract.task_store import now_iso
 from ..contract.task_store import resume_web_turn_task
@@ -40,12 +43,20 @@ def create_turn_run_record(ctx: WebApiContext, turn_id: str) -> dict[str, Any] |
     _fail_before_spawn(ctx, turn_id, "ProjectNotFound", "Project not found")
     return None
 
+  raw_agent_id = str(session.get("agent_id") or DEFAULT_WEB_AGENT_ID)
+  agent_runtime = str(
+      session.get("agent_runtime") or get_agent_definition(raw_agent_id).runtime
+  )
+  agent_id = resolve_agent_id_for_runtime(
+      raw_agent_id,
+      agent_runtime,
+  )
   return create_web_turn_task(
       session_id=session_id,
       turn_id=turn_id,
       project_root=str(project["root_path"]),
-      agent_id=str(session.get("agent_id") or "orca_adk"),
-      agent_runtime=str(session.get("agent_runtime") or "adk"),
+      agent_id=agent_id,
+      agent_runtime=agent_runtime,
       input_text=str(turn.get("input_text") or ""),
       user_id=ctx.settings.user_id,
       model_config_id=turn.get("model_config_id"),

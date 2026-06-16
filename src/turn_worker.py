@@ -11,6 +11,9 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .observability import setup_phoenix_tracing
+from .agent_runtime import DEFAULT_WEB_AGENT_ID
+from .agent_runtime import get_agent_definition
+from .agent_runtime import resolve_agent_id_for_runtime
 from .run_manager import run_agent_invocation
 from .runner import create_handa_services
 from .runtime import append_task_event
@@ -97,7 +100,14 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
   task = load_task(turn_id, session_id=session_id)
   services = create_handa_services()
   storage_root = services.storage_root
-  agent_runtime = str(task.get("agent_runtime") or "adk")
+  raw_agent_id = str(task.get("agent_id") or DEFAULT_WEB_AGENT_ID)
+  agent_runtime = str(
+      task.get("agent_runtime") or get_agent_definition(raw_agent_id).runtime
+  )
+  agent_id = resolve_agent_id_for_runtime(
+      raw_agent_id,
+      agent_runtime,
+  )
 
   task["status"] = "running"
   task["started_at"] = task.get("started_at") or now_iso()
@@ -142,7 +152,7 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
         services=services,
         session_id=session_id,
         user_id=str(task.get("user_id") or "user"),
-        agent_id=str(task.get("agent_id") or "orca_adk"),
+        agent_id=agent_id,
         input_text=str(task.get("input_text") or ""),
         attachments=list(task.get("attachments") or []),
         on_event=on_event,

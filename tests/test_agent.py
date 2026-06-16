@@ -6,13 +6,16 @@ import typing
 import pytest
 
 from src.agent import select_agent_tools
-from src.agents.handa_adk.loader import AGENTS_DIR
 from src.agents.handa_adk.loader import list_agents
 from src.agents.handa_adk.loader import load_agent
 from src.agents.handa_adk.tools import get_tool_registry
+from src.agents.browser.loader import MAIN_CONFIG_PATH as BROWSER_MAIN_CONFIG_PATH
+from src.agents.orca.tools import SessionContext
+from src.agents.orca.tools import build_toolset
 from src.config import load_agent_config_from_path
 from src.agents.handa_adk.tools.registry import ToolSpec
 from src.agents.handa_adk.tools.registry import _wrap_tool_function
+from src.agents.tool_catalog import known_agent_tool_names
 
 
 def _tool_names(toolsets):
@@ -46,6 +49,10 @@ def test_tool_registry_uses_namespaced_names():
   assert registry["agents_save_config"].name == "save_config"
   assert "vcs_jj_status" not in registry
   assert "vcs_jj_log" not in registry
+
+
+def test_shared_tool_catalog_matches_adk_registry():
+  assert known_agent_tool_names() == frozenset(get_tool_registry())
 
 
 def test_agent_loader_lists_and_builds_agents():
@@ -101,12 +108,14 @@ def test_main_agent_config_selects_explicit_tools():
 
 
 def test_browser_sub_agent_owns_browser_tools():
-  config = load_agent_config_from_path(
-      AGENTS_DIR / "browser" / "browser.agent.json"
-  )
+  config = load_agent_config_from_path(BROWSER_MAIN_CONFIG_PATH)
   assert config.name == "browser"
   assert config.skills == []
-  tool_names = set(_tool_names(select_agent_tools(config.tools)))
+  toolset = build_toolset(
+      config.tools,
+      SessionContext(session_id="session-browser", user_id="user"),
+  )
+  tool_names = set(toolset.callables)
   for name in {
       "browser_open",
       "browser_snapshot",

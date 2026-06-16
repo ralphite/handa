@@ -184,7 +184,7 @@ def test_run_agent_starts_child_task(tmp_path, monkeypatch):
     }
 
   monkeypatch.setattr(
-      "src.agents.handa_langgraph.tools.start_run_agent_task", fake_start
+      "src.agents.orca.tools.start_run_agent_task", fake_start
   )
 
   async def go():

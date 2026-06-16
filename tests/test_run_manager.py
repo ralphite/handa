@@ -192,7 +192,7 @@ def test_run_agent_invocation_forwards_image_attachment_to_langgraph(
           services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
-          agent_id="orca",
+          agent_id="orca_langgraph",
           input_text="look at this",
           attachments=attachments,
           on_event=on_event,
@@ -306,3 +306,107 @@ def test_run_agent_invocation_does_not_retry_after_output(monkeypatch):
   assert runner.calls == 1
   assert sleeps == []
   assert len(events) == 1
+
+
+def test_native_run_agent_invocation_retries_after_started_before_output(
+    tmp_path,
+    monkeypatch,
+):
+  calls = 0
+
+  async def fake_runner(**kwargs):
+    nonlocal calls
+    calls += 1
+    await kwargs["emit_event"]({"kind": "orca.started"})
+    if calls == 1:
+      raise APIError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
+    await kwargs["emit_event"]({"kind": "agent_text", "payload": {"text": "recovered"}})
+    return RunOutcome(final_text="recovered")
+
+  monkeypatch.setattr(
+      "src.run_manager.load_native_agent",
+      lambda agent_id: fake_runner,
+  )
+  sleeps = []
+
+  async def fake_sleep(delay):
+    sleeps.append(delay)
+
+  monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+  events = []
+
+  async def on_event(event):
+    events.append(event)
+
+  result = asyncio.run(
+      run_agent_invocation(
+          services=SimpleNamespace(),
+          session_id="session-1",
+          user_id="user",
+          agent_id="orca",
+          input_text="hello",
+          on_event=on_event,
+          project_root=str(tmp_path),
+      )
+  )
+
+  assert result.final_text == "recovered"
+  assert calls == 2
+  assert sleeps == [60.0]
+  assert [event["kind"] for event in events] == [
+      "orca.started",
+      "orca.started",
+      "agent_text",
+  ]
+
+
+def test_langgraph_run_agent_invocation_retries_after_started_before_output(
+    tmp_path,
+    monkeypatch,
+):
+  calls = 0
+
+  async def fake_runner(**kwargs):
+    nonlocal calls
+    calls += 1
+    await kwargs["emit_event"]({"kind": "langgraph.started"})
+    if calls == 1:
+      raise APIError(503, {"error": {"code": 503}})
+    await kwargs["emit_event"]({"kind": "agent_text", "payload": {"text": "recovered"}})
+    return RunOutcome(final_text="recovered")
+
+  monkeypatch.setattr(
+      "src.run_manager.load_langgraph_agent",
+      lambda agent_id: fake_runner,
+  )
+  sleeps = []
+
+  async def fake_sleep(delay):
+    sleeps.append(delay)
+
+  monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+  events = []
+
+  async def on_event(event):
+    events.append(event)
+
+  result = asyncio.run(
+      run_agent_invocation(
+          services=SimpleNamespace(),
+          session_id="session-1",
+          user_id="user",
+          agent_id="orca_langgraph",
+          input_text="hello",
+          on_event=on_event,
+          project_root=str(tmp_path),
+      )
+  )
+
+  assert result.final_text == "recovered"
+  assert calls == 2
+  assert sleeps == [2.0]
+  assert [event["kind"] for event in events] == [
+      "langgraph.started",
+      "langgraph.started",
+      "agent_text",
+  ]

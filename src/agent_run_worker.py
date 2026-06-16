@@ -14,6 +14,7 @@ from google.genai import types
 from .agents.handa_adk.config_based import build_llm_agent_from_config
 from .agents.handa_adk.loader import load_agent as load_adk_agent
 from .agents.handa_langgraph.loader import load_agent as load_langgraph_agent
+from .agents.native_loader import load_agent as load_native_agent
 from .config import AgentConfig
 from .config import agent_config_artifact_filename
 from .config import resolve_agent_config_model_config_id
@@ -294,6 +295,46 @@ async def _run_langgraph_task(
   return outcome.final_text
 
 
+async def _run_native_task(
+    *,
+    task: dict[str, Any],
+    log_handle,
+    session_service: HandaSessionService,
+    storage_root,
+) -> str:
+  runner = load_native_agent(task["agent_id"])
+  runtime_events = RuntimeEventStore(storage_root)
+  child_session_id = str(task.get("child_session_id") or task.get("session_id") or "")
+  turn_id = f"session:{child_session_id}" if child_session_id else None
+
+  async def emit_event(event: dict[str, Any]) -> None:
+    _log_runtime_event(log_handle, event)
+    if not child_session_id:
+      return
+    runtime_events.append(
+        session_id=child_session_id,
+        turn_id=turn_id,
+        runtime="native",
+        event_id=_optional_str(event.get("id")),
+        created_at=_optional_str(event.get("created_at") or event.get("timestamp")),
+        event=event,
+    )
+    session_service.merge_state_sync(child_session_id, {})
+
+  outcome = await runner(
+      prompt=task["prompt"],
+      context=task.get("context") or "",
+      project_root=task["project_root"],
+      emit_event=emit_event,
+      model_config_id=task.get("model_config_id"),
+      session_id=child_session_id or task.get("session_id"),
+      user_id=task.get("user_id"),
+  )
+  if outcome.pending_user_input is not None:
+    raise RuntimeError("request_user_input is not supported in child agent runs")
+  return outcome.final_text
+
+
 def _task_prompt(task: dict[str, Any]) -> str:
   prompt = task["prompt"]
   if task.get("context"):
@@ -340,6 +381,13 @@ async def _run_agent_in_project(
     with log_path.open("a", encoding="utf-8") as log_handle:
       if task.get("agent_runtime", "adk") == "langgraph":
         final_text = await _run_langgraph_task(
+            task=task,
+            log_handle=log_handle,
+            session_service=session_service,
+            storage_root=storage_root,
+        )
+      elif task.get("agent_runtime") == "native":
+        final_text = await _run_native_task(
             task=task,
             log_handle=log_handle,
             session_service=session_service,

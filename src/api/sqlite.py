@@ -9,8 +9,24 @@ from typing import Any
 import uuid
 
 from ..contract.product import DEFAULT_MODEL_CONFIG_ID
+from ..contract.product import DEFAULT_WEB_AGENT_ID
+from ..contract.product import get_agent_definition
 from ..contract.task_store import now_iso
 from ..contract.storage import RuntimeEventStore
+
+
+def _fallback_agent_id(row: dict[str, Any]) -> str:
+  return str(row.get("agent_id") or DEFAULT_WEB_AGENT_ID)
+
+
+def _fallback_agent_runtime(row: dict[str, Any]) -> str:
+  value = row.get("agent_runtime")
+  if value:
+    return str(value)
+  try:
+    return get_agent_definition(_fallback_agent_id(row)).runtime
+  except ValueError:
+    return "adk"
 
 
 _WEB_STEPS_SCHEMA_SQL = """
@@ -287,8 +303,8 @@ class WebDatabase:
               {
                   "id": row["id"],
                   "project_id": row.get("project_id"),
-                  "agent_id": row.get("agent_id") or "orca_adk",
-                  "agent_runtime": row.get("agent_runtime") or "adk",
+                  "agent_id": _fallback_agent_id(row),
+                  "agent_runtime": _fallback_agent_runtime(row),
                   "title": row.get("title"),
                   "title_source": row.get("title_source") or "auto",
                   "parent_session_id": row.get("parent_session_id") or row.get("parent_thread_id"),
@@ -701,8 +717,8 @@ class WebDatabase:
             {
                 "id": str(row["id"]),
                 "project_id": row.get("project_id"),
-                "agent_id": row.get("agent_id") or "orca_adk",
-                "agent_runtime": row.get("agent_runtime") or "adk",
+                "agent_id": _fallback_agent_id(row),
+                "agent_runtime": _fallback_agent_runtime(row),
                 "title": row.get("title"),
                 "title_source": row.get("title_source") or "auto",
                 "parent_session_id": row.get("parent_session_id") or row.get("parent_thread_id"),
@@ -829,8 +845,8 @@ class WebDatabase:
           {
               "id": session_id,
               "project_id": row.get("project_id"),
-              "agent_id": row.get("agent_id") or "orca_adk",
-              "agent_runtime": row.get("agent_runtime") or "adk",
+              "agent_id": _fallback_agent_id(row),
+              "agent_runtime": _fallback_agent_runtime(row),
               "title": row.get("title"),
               "title_source": row.get("title_source") or "auto",
               "parent_session_id": row.get("parent_session_id") or row.get("parent_thread_id"),
@@ -2207,8 +2223,8 @@ class WebDatabase:
           {
               "id": target_session_id,
               "project_id": source_dict.get("project_id"),
-              "agent_id": source_dict.get("agent_id") or "orca_adk",
-              "agent_runtime": source_dict.get("agent_runtime") or "adk",
+              "agent_id": _fallback_agent_id(source_dict),
+              "agent_runtime": _fallback_agent_runtime(source_dict),
               "title": fork_title,
               "forked_from_session_id": source_session_id,
               "forked_from_turn_id": source_turn_id,

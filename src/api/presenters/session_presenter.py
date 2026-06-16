@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...contract.product import DEFAULT_AGENT_ID
+from ...contract.product import DEFAULT_WEB_AGENT_ID
 from ..schemas import SessionSummary
 
 
@@ -13,7 +13,7 @@ def present_session(
     updated_at: str,
     automated_task_id: str | None = None,
 ) -> SessionSummary:
-  agent_id = str(meta.get("agent_id") or DEFAULT_AGENT_ID)
+  agent_id = str(meta.get("agent_id") or DEFAULT_WEB_AGENT_ID)
   starred_at = meta.get("starred_at")
   unread_at = meta.get("unread_at")
   return SessionSummary(

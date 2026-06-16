@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 
+from ...contract.product import DEFAULT_WEB_AGENT_ID
 from ...contract.product import get_agent_definition
 from ...contract.services import APP_NAME
 from ...contract.task_store import cancel_descendant_runs
@@ -200,11 +201,15 @@ async def fork_session(
   project_id = source_meta.get("project_id")
   project = ctx.db.get_project(str(project_id)) if project_id else None
   fork_meta = fork["meta"]
+  source_agent_id = str(source_meta.get("agent_id") or DEFAULT_WEB_AGENT_ID)
+  source_agent_runtime = str(
+      source_meta.get("agent_runtime") or get_agent_definition(source_agent_id).runtime
+  )
   state_updates = {
       "handa:forked_from_session_id": session_id,
       "handa:forked_at": str(fork_meta.get("forked_at") or ""),
-      "handa:agent_id": str(source_meta.get("agent_id") or "orca_adk"),
-      "handa:agent_runtime": str(source_meta.get("agent_runtime") or "adk"),
+      "handa:agent_id": source_agent_id,
+      "handa:agent_runtime": source_agent_runtime,
   }
   if source_turn_id:
     state_updates["handa:forked_from_turn_id"] = source_turn_id

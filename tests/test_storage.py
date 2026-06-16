@@ -81,6 +81,132 @@ async def _assert_session_service_stores_events_in_runtime_jsonl(tmp_path):
   assert loaded.events[0].invocation_id == "runtime-turn-1"
 
 
+def test_session_truncate_rewinds_native_orca_history(tmp_path):
+  asyncio.run(_assert_session_truncate_rewinds_native_orca_history(tmp_path))
+
+
+async def _assert_session_truncate_rewinds_native_orca_history(tmp_path):
+  root = tmp_path / ".handa"
+  service = HandaSessionService(root=str(root))
+  await service.create_session(
+      app_name="handa",
+      user_id="user",
+      state={
+          "handa:orca_history": [
+              {"role": "user", "parts": [{"text": "first"}]},
+              {"role": "model", "parts": [{"text": "first answer"}]},
+              {"role": "user", "parts": [{"text": "second"}]},
+              {"role": "model", "parts": [{"text": "second answer"}]},
+          ],
+          "handa:orca_pending_rounds": 1,
+          "handa:pending_user_input": {"request_id": "uireq_stale"},
+      },
+      session_id="session-orca",
+  )
+  store = service._runtime_events
+  store.append(
+      session_id="session-orca",
+      turn_id="turn-1",
+      runtime="native",
+      event={
+          "id": "orca_boundary_1",
+          "kind": "orca.history_boundary",
+          "payload": {"history_length": 2},
+      },
+  )
+  store.append(
+      session_id="session-orca",
+      turn_id="turn-2",
+      runtime="native",
+      event={
+          "id": "orca_boundary_2",
+          "kind": "orca.history_boundary",
+          "payload": {"history_length": 4},
+      },
+  )
+
+  await service.truncate_session(
+      app_name="handa",
+      user_id="user",
+      session_id="session-orca",
+      kept_turn_ids={"turn-1"},
+      artifact_refs=set(),
+  )
+
+  state = service.read_state_sync("session-orca")
+  assert [item["parts"][0]["text"] for item in state["handa:orca_history"]] == [
+      "first",
+      "first answer",
+  ]
+  assert "handa:orca_pending_rounds" not in state
+  assert "handa:pending_user_input" not in state
+  raw = store.list_events(session_id="session-orca", runtime="native")
+  assert [item["turn_id"] for item in raw] == ["turn-1"]
+
+
+def test_session_truncate_rewinds_native_browser_history(tmp_path):
+  asyncio.run(_assert_session_truncate_rewinds_native_browser_history(tmp_path))
+
+
+async def _assert_session_truncate_rewinds_native_browser_history(tmp_path):
+  root = tmp_path / ".handa"
+  service = HandaSessionService(root=str(root))
+  await service.create_session(
+      app_name="handa",
+      user_id="user",
+      state={
+          "handa:browser_history": [
+              {"role": "user", "parts": [{"text": "open first"}]},
+              {"role": "model", "parts": [{"text": "first answer"}]},
+              {"role": "user", "parts": [{"text": "open second"}]},
+              {"role": "model", "parts": [{"text": "second answer"}]},
+          ],
+          "handa:browser_pending_rounds": 2,
+          "handa:pending_user_input": {"request_id": "uireq_stale"},
+      },
+      session_id="session-browser",
+  )
+  store = service._runtime_events
+  store.append(
+      session_id="session-browser",
+      turn_id="turn-1",
+      runtime="native",
+      event={
+          "id": "browser_boundary_1",
+          "kind": "browser.history_boundary",
+          "payload": {"history_length": 2},
+      },
+  )
+  store.append(
+      session_id="session-browser",
+      turn_id="turn-2",
+      runtime="native",
+      event={
+          "id": "browser_boundary_2",
+          "kind": "browser.history_boundary",
+          "payload": {"history_length": 4},
+      },
+  )
+
+  await service.truncate_session(
+      app_name="handa",
+      user_id="user",
+      session_id="session-browser",
+      kept_turn_ids={"turn-1"},
+      artifact_refs=set(),
+  )
+
+  state = service.read_state_sync("session-browser")
+  assert [item["parts"][0]["text"] for item in state["handa:browser_history"]] == [
+      "open first",
+      "first answer",
+  ]
+  assert "handa:browser_pending_rounds" not in state
+  assert "handa:pending_user_input" not in state
+  raw = store.list_events(session_id="session-browser", runtime="native")
+  assert [item["turn_id"] for item in raw] == ["turn-1"]
+
+
 def test_services_use_process_handa_directory(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))

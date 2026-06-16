@@ -22,6 +22,7 @@ from src.runtime import load_task
 from src.runtime import save_task
 from src.runtime import start_background_task
 from src.runtime import start_run_agent_task
+from src.runtime import start_system_agent_run_task
 from src.runtime import task_result_file
 from src.storage.paths import browser_dir
 from src.storage.paths import browser_screenshot_path
@@ -59,7 +60,7 @@ def test_web_api_health_and_session_creation(tmp_path, monkeypatch):
   assert created["id"] in [session["id"] for session in listed]
 
 
-def test_web_api_session_creation_defaults_to_langgraph_main(tmp_path, monkeypatch):
+def test_web_api_session_creation_defaults_to_orca(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   project = tmp_path / "project"
   project.mkdir()
@@ -72,7 +73,7 @@ def test_web_api_session_creation_defaults_to_langgraph_main(tmp_path, monkeypat
   created = client.post("/api/sessions", json={"project_id": project["id"]}).json()
 
   assert created["agent_id"] == "orca"
-  assert created["agent_runtime"] == "langgraph"
+  assert created["agent_runtime"] == "native"
 
 
 def test_web_api_session_list_hides_missing_adk_sessions(tmp_path, monkeypatch):
@@ -1069,10 +1070,16 @@ def test_web_api_lists_agent_definitions(tmp_path, monkeypatch):
   agents = client.get("/api/agents").json()
 
   by_id = {agent["id"]: agent for agent in agents}
+  assert by_id["browser"]["runtime"] == "native"
+  assert by_id["browser"]["label"] == "browser"
   assert by_id["orca_adk"]["runtime"] == "adk"
   assert by_id["orca_adk"]["label"] == "Orca ADK"
-  assert by_id["orca"]["runtime"] == "langgraph"
+  assert by_id["orca"]["runtime"] == "native"
   assert by_id["orca"]["label"] == "Orca"
+  assert by_id["ralph"]["runtime"] == "native"
+  assert by_id["ralph"]["label"] == "ralph"
+  assert by_id["orca_langgraph"]["runtime"] == "langgraph"
+  assert by_id["orca_langgraph"]["label"] == "Orca LangGraph"
 
 
 def test_web_api_agent_catalog(tmp_path, monkeypatch):
@@ -1175,11 +1182,11 @@ def test_web_api_invocation_creation_persists_langgraph_runtime(
 
   meta = app.state.web_context.db.get_session_meta(created["session_id"])
   assert meta["agent_id"] == "orca"
-  assert meta["agent_runtime"] == "langgraph"
+  assert meta["agent_runtime"] == "native"
   assert "handa:agent_runtime" not in session.state
 
 
-def test_web_api_turn_creation_defaults_to_langgraph_main(tmp_path, monkeypatch):
+def test_web_api_turn_creation_defaults_to_orca(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   project = tmp_path / "project"
   project.mkdir()
@@ -1207,7 +1214,7 @@ def test_web_api_turn_creation_defaults_to_langgraph_main(tmp_path, monkeypatch)
   meta = app.state.web_context.db.get_session_meta(created["session_id"])
 
   assert meta["agent_id"] == "orca"
-  assert meta["agent_runtime"] == "langgraph"
+  assert meta["agent_runtime"] == "native"
 
 
 def test_session_detail_projects_agent_tasks_and_child_breadcrumbs(tmp_path, monkeypatch):
@@ -1859,6 +1866,53 @@ def test_background_task_manager_delivers_subagent_completion_notification(
   assert len(list_task_notifications(session_id=parent["id"])) == 1
 
 
+def test_background_task_manager_skips_suppressed_task_notifications(
+    tmp_path,
+    monkeypatch,
+):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("HANDA_PROJECT_ROOT", str(project))
+
+  class FakeProcess:
+    pid = 12345
+
+  monkeypatch.setattr(
+      "src.runtime.subprocess.Popen",
+      lambda *args, **kwargs: FakeProcess(),
+  )
+
+  app = create_app()
+  client = TestClient(app)
+  project_record = client.post("/api/projects", json={"root_path": str(project)}).json()
+  parent = client.post(
+      "/api/sessions",
+      json={"agent_id": "ralph", "project_id": project_record["id"]},
+  ).json()
+  task = start_system_agent_run_task(
+      config={
+          "name": "ralph_builder",
+          "model_config_id": "gemini-3.5-flash",
+          "tools": [],
+      },
+      prompt="Run an internal Ralph node.",
+      session_id=parent["id"],
+      user_id="user",
+      app_name="handa",
+      suppress_task_notification=True,
+  )
+  _mark_task_completed(parent["id"], task["id"], final_text="Internal result.")
+
+  manager = BackgroundTaskManager(app.state.web_context, start_invocation_run=False)
+  result = asyncio.run(manager.process_once())
+
+  assert result == {"created": 0, "delivered": 0, "blocked": 0}
+  assert list_task_notifications(session_id=parent["id"]) == []
+  assert app.state.web_context.db.list_turns_for_session(parent["id"]) == []
+
+
 def test_background_task_manager_dispatches_delivered_notification_invocation(
     tmp_path,
     monkeypatch,
@@ -2506,6 +2560,106 @@ def test_execute_turn_runs_langgraph_agent(tmp_path, monkeypatch):
   # context text is folded into the user message anymore.
   assert captured_user_texts[0] == "Inspect project."
   assert detail["agent_runtime"] == "langgraph"
+  assert [step["kind"] for step in detail["steps"]] == kinds
+
+
+def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  (project / "README.md").write_text("demo\n", encoding="utf-8")
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+  from types import SimpleNamespace
+
+  from google.genai import types
+  from src.agents.orca import runner as orca_runner
+
+  scripted = [
+      types.Content(
+          role="model",
+          parts=[
+              types.Part(
+                  function_call=types.FunctionCall(
+                      name="files_read", args={"path": "README.md"}
+                  )
+              )
+          ],
+      ),
+      types.Content(role="model", parts=[types.Part(text="Native Orca inspected README.md.")]),
+  ]
+  call_count: list[int] = []
+
+  async def fake_generate(*, client, model, contents, config):
+    call_count.append(1)
+    content = scripted[len(call_count) - 1]
+    return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+
+  monkeypatch.setattr(orca_runner, "_generate_model_response", fake_generate)
+
+  app = create_app()
+  client = TestClient(app)
+  project = client.post("/api/projects", json={"root_path": str(project)}).json()
+  ctx = app.state.web_context
+  asyncio.run(
+      ctx.services.session_service.create_session(
+          app_name=APP_NAME,
+          user_id=ctx.settings.user_id,
+          session_id="session-native-orca",
+          state={
+              "handa:agent_id": "orca",
+              "handa:project_id": project["id"],
+              "handa:project_root": str(project),
+          },
+      )
+  )
+  ctx.db.create_session(
+      session_id="session-native-orca",
+      project_id=project["id"],
+      agent_id="orca",
+      agent_runtime="native",
+      title="Native Orca run",
+  )
+  invocation = ctx.db.create_turn(
+      session_id="session-native-orca",
+      title="Native Orca run",
+      input_text="Inspect project.",
+  )
+
+  asyncio.run(execute_turn(ctx, invocation["id"]))
+
+  fetched = ctx.db.get_turn(invocation["id"])
+  events = ctx.db.list_steps_for_turn(turn_id=invocation["id"])
+  detail = client.get("/api/sessions/session-native-orca/detail").json()
+
+  assert fetched["status"] == "completed"
+  assert fetched["final_text"] == "Native Orca inspected README.md."
+  kinds = [event["kind"] for event in events]
+  assert "runtime_step" not in kinds
+  assert kinds[-1] == "agent_text"
+  assert "tool_call" in kinds
+  assert "tool_response" in kinds
+  assert events[-1]["id"].startswith("orca_")
+  assert events[-1]["payload"]["final"] is True
+  tool_response = next(event for event in events if event["kind"] == "tool_response")
+  assert tool_response["payload"]["name"] == "files_read"
+  assert tool_response["payload"]["response"]["path"] == "README.md"
+  from src.storage.runtime_event_store import RuntimeEventStore
+
+  raw_kinds = [
+      item["event"]["kind"]
+      for item in RuntimeEventStore(storage_root).list_events(
+          session_id="session-native-orca",
+          runtime="native",
+      )
+  ]
+  assert "orca.tool_call" in raw_kinds
+  assert "orca.tool_result" in raw_kinds
+  assert "orca.history_boundary" in raw_kinds
+  state = ctx.services.session_service.read_state_sync("session-native-orca")
+  assert len(state["handa:orca_history"]) == 4
+  assert detail["agent_runtime"] == "native"
   assert [step["kind"] for step in detail["steps"]] == kinds
 
 
@@ -3816,7 +3970,7 @@ def test_web_api_agent_context_usage_static_preview(tmp_path, monkeypatch):
   assert response.status_code == 200
   body = response.json()
   assert body["agent_id"] == "orca"
-  assert body["agent_runtime"] == "langgraph"
+  assert body["agent_runtime"] == "native"
   assert body["total_token_count"] > 0
   by_id = {item["id"]: item for item in body["breakdown"]}
   assert by_id["instruction"]["token_count"] > 0

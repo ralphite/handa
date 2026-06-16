@@ -567,9 +567,39 @@ def test_run_agent_task_creates_child_session(tmp_path, monkeypatch):
   assert child is not None
   assert child.state["handa:session_kind"] == "run_agent_child"
   assert child.state["handa:target_agent_id"] == "ralph"
-  assert task["agent_runtime"] == "adk"
-  assert child.state["handa:agent_runtime"] == "adk"
+  assert task["agent_runtime"] == "native"
+  assert child.state["handa:agent_runtime"] == "native"
   assert child.state["handa:agent_run_depth"] == 2
+
+
+def test_native_orca_run_agent_task_creates_runtime_snapshot(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  session_id = "session-1"
+  monkeypatch.setenv("HANDA_PROJECT_ROOT", str(tmp_path))
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+
+  class FakeProcess:
+    pid = 12345
+
+  monkeypatch.setattr(
+      "src.runtime.subprocess.Popen",
+      lambda *args, **kwargs: FakeProcess(),
+  )
+
+  task = start_run_agent_task(
+      agent_id="orca",
+      prompt="Summarize project.",
+      session_id=session_id,
+      user_id="user",
+      app_name="handa",
+  )
+  child = HandaSessionService(root=str(storage_root))._read_session(
+      task["child_session_id"]
+  )
+
+  assert task["agent_runtime"] == "native"
+  assert child is not None
+  assert child.state["handa:agent_runtime"] == "native"
 
 
 def test_langgraph_run_agent_task_creates_runtime_snapshot(tmp_path, monkeypatch):
@@ -587,7 +617,7 @@ def test_langgraph_run_agent_task_creates_runtime_snapshot(tmp_path, monkeypatch
   )
 
   task = start_run_agent_task(
-      agent_id="orca",
+      agent_id="orca_langgraph",
       prompt="Summarize project.",
       session_id=session_id,
       user_id="user",

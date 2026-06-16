@@ -220,10 +220,10 @@ def test_exact_thought_tokens_survive_residual_scaling():
   assert sum(item["token_count"] for item in result) == 1400
 
 
-def test_static_context_usage_breakdown_previews_langgraph_main():
+def test_static_context_usage_breakdown_previews_orca():
   result = build_static_context_usage_breakdown(
       agent_id="orca",
-      agent_runtime="langgraph",
+      agent_runtime="native",
       project_root=None,
   )
 
@@ -236,3 +236,35 @@ def test_static_context_usage_breakdown_previews_langgraph_main():
   total = sum(item["token_count"] for item in result)
   assert sum(item["percent"] for item in result) > 99.0
   assert total > 0
+
+
+def test_static_context_usage_breakdown_previews_browser():
+  result = build_static_context_usage_breakdown(
+      agent_id="browser",
+      agent_runtime="native",
+      project_root=None,
+  )
+
+  by_id = {item["id"]: item for item in result}
+  assert by_id["instruction"]["token_count"] > 0
+  assert by_id["system_tools"]["token_count"] > 0
+  assert by_id["skills"]["token_count"] == 0
+  assert by_id["user_messages"]["token_count"] == 0
+  assert by_id["tool_call_responses"]["token_count"] == 0
+  assert by_id["llm_responses"]["token_count"] == 0
+
+
+def test_static_context_usage_breakdown_previews_ralph():
+  result = build_static_context_usage_breakdown(
+      agent_id="ralph",
+      agent_runtime="native",
+      project_root=None,
+  )
+
+  by_id = {item["id"]: item for item in result}
+  assert by_id["instruction"]["token_count"] > 0
+  assert by_id["system_tools"]["token_count"] == 0
+  assert by_id["skills"]["token_count"] == 0
+  assert by_id["user_messages"]["token_count"] == 0
+  assert by_id["tool_call_responses"]["token_count"] == 0
+  assert by_id["llm_responses"]["token_count"] == 0

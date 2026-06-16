@@ -89,6 +89,7 @@ def test_cli_runs_phase_workflow_and_reuses_session(monkeypatch, capsys, tmp_pat
   assert calls[1][calls[1].index("--session") + 1] == "session-1"
   # handacli is invoked with the resolved project name, not the path.
   assert calls[0][calls[0].index("--project") + 1] == tmp_path.name
+  assert calls[0][calls[0].index("--agent") + 1] == "orca"
   assert (tmp_path / "generated_specs" / "system_spec.md").is_file()
   assert (tmp_path / "generated_specs" / "_runs" / "01-evidence.prompt.md").is_file()
 

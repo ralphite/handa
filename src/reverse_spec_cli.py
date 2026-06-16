@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import Field
 
+from .agent_runtime import DEFAULT_WEB_AGENT_ID
 from .handacli import HandaCliApiError
 from .handacli import resolve_project_name_for_path
 from .reverse_spec_prompts import atom_extraction_prompt
@@ -25,7 +26,7 @@ from .reverse_spec_prompts import verify_prompt
 
 
 DEFAULT_OUTPUT_DIR = "generated_specs"
-DEFAULT_AGENT = "orca_adk"
+DEFAULT_AGENT = DEFAULT_WEB_AGENT_ID
 DEFAULT_TIMEOUT_SEC = 3600
 DEFAULT_MAX_REPAIRS = 1
 MARKER_FILE = ".reverse-spec-generated"

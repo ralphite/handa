@@ -462,7 +462,7 @@ async def _truncate_and_create_turn(
 
   meta = ctx.db.get_session_meta(session_id)
   project_id = str((meta or {}).get("project_id") or "")
-  agent_id = str((meta or {}).get("agent_id") or "orca_adk")
+  agent_id = str((meta or {}).get("agent_id") or DEFAULT_WEB_AGENT_ID)
   definition = get_agent_definition(agent_id)
   if project_id:
     ctx.db.touch_project(project_id)

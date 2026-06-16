@@ -21,18 +21,18 @@ def list_agent_definitions() -> list[AgentDefinition]:
   config = load_agent_config_from_path(MAIN_CONFIG_PATH)
   return [
       AgentDefinition(
-          id="orca",
+          id="orca_langgraph",
           runtime="langgraph",
           entrypoint="src.agents.handa_langgraph.orca:run",
-          label="Orca",
+          label="Orca LangGraph",
           description=config.description,
       )
   ]
 
 
 def load_agent(agent_id: str) -> LangGraphAgentRunner:
-  normalized = validate_agent_id(agent_id)
-  if normalized == "orca":
+  normalized = _normalize_legacy_agent_id(agent_id)
+  if normalized == "orca_langgraph":
     from .orca import run
 
     return run
@@ -45,8 +45,16 @@ def validate_agent_id(agent_id: str) -> str:
     raise ValueError("agent_id must not be empty.")
   if not AGENT_ID_PATTERN.fullmatch(normalized):
     raise ValueError(f"Invalid agent_id: {agent_id!r}.")
+  normalized = _normalize_legacy_agent_id(normalized)
   known = {definition.id for definition in list_agent_definitions()}
   if normalized not in known:
     available = ", ".join(sorted(known)) or "(none)"
     raise ValueError(f"Unknown LangGraph agent_id: {normalized}. Available: {available}.")
+  return normalized
+
+
+def _normalize_legacy_agent_id(agent_id: str) -> str:
+  normalized = agent_id.strip()
+  if normalized == "orca":
+    return "orca_langgraph"
   return normalized

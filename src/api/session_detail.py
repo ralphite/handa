@@ -6,6 +6,7 @@ from typing import Any
 from typing import TYPE_CHECKING
 
 from ..contract.browser import read_browser_summary
+from ..contract.product import DEFAULT_WEB_AGENT_ID
 from ..contract.product import PROGRESS_STATE_KEY
 from ..contract.product import normalize_progress_items
 from ..contract.run_events import serialize_adk_event
@@ -187,7 +188,7 @@ def _root_session_title(
     return str(meta["title"]).strip()
   if turn and turn.get("title"):
     return str(turn["title"])
-  agent_id = _state_str(root, "handa:agent_id") or "orca_adk"
+  agent_id = _state_str(root, "handa:agent_id") or DEFAULT_WEB_AGENT_ID
   return f"{agent_id} · {root.id}"
 
 
@@ -215,7 +216,7 @@ def _agent_id_for(
       or _state_str(session, "handa:agent_id")
       or _state_str(session, "handa:agent_run_config_name")
       or _state_str(session, "handa:system_agent_config_name")
-      or "orca_adk"
+      or DEFAULT_WEB_AGENT_ID
   )
 
 

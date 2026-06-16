@@ -10,6 +10,7 @@ from google.adk.tools import ToolContext  # noqa: F401 - resolves wrapper annota
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
 
+from ...tool_catalog import known_agent_tool_names as catalog_known_agent_tool_names
 from ....tools import commands
 from ....tools import files
 from ....tools import skills
@@ -113,11 +114,11 @@ LONG_RUNNING_TOOL_NAMES = {"request_user_input"}
 def known_agent_tool_names() -> frozenset[str]:
   """Every tool name a generated agent config may grant.
 
-  This is the full catalog across runtimes (the ADK registry is a superset of
-  the LangGraph toolset), so it validates config tool lists without rejecting a
-  tool that is valid for whichever runtime ends up running the config.
+  This is the full catalog across runtimes, so it validates config tool lists
+  without rejecting a tool that is valid for whichever runtime ends up running
+  the config.
   """
-  return frozenset(get_tool_registry())
+  return catalog_known_agent_tool_names()
 
 
 def get_tool_registry() -> dict[str, ToolSpec]:

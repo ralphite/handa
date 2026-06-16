@@ -191,9 +191,16 @@ def test_project_adk_event_drops_empty_partial_markers():
 def test_project_runtime_event_drops_lifecycle_kinds():
   from src.api.presenters.runtime_event_presenter import project_runtime_event
 
-  for kind in ("langgraph.started", "langgraph.checkpoint"):
+  for runtime, kind in (
+      ("langgraph", "langgraph.started"),
+      ("langgraph", "langgraph.checkpoint"),
+      ("native", "orca.started"),
+      ("native", "browser.started"),
+      ("native", "browser.history_boundary"),
+      ("native", "ralph.started"),
+  ):
     event = {"id": "evt-1", "kind": kind, "summary": "noise", "payload": {}}
-    assert project_runtime_event(event, runtime="langgraph") == []
+    assert project_runtime_event(event, runtime=runtime) == []
 
 
 _QUOTA_ERROR_MESSAGE = """

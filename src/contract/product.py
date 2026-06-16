@@ -11,9 +11,13 @@ from ..agent_runtime import AgentDefinition as AgentDefinition
 from ..agent_runtime import DEFAULT_WEB_AGENT_ID as DEFAULT_WEB_AGENT_ID
 from ..agent_runtime import get_agent_definition as get_agent_definition
 from ..agent_runtime import list_agent_definitions as list_agent_definitions
+from ..agent_runtime import resolve_agent_id_for_runtime as resolve_agent_id_for_runtime
 from ..agents.handa_adk.loader import AGENTS_DIR as ADK_AGENTS_DIR
 from ..agents.handa_adk.loader import DEFAULT_AGENT_ID as DEFAULT_AGENT_ID
 from ..agents.handa_langgraph.loader import MAIN_CONFIG_PATH as LANGGRAPH_MAIN_CONFIG_PATH
+from ..agents.browser.loader import MAIN_CONFIG_PATH as BROWSER_MAIN_CONFIG_PATH
+from ..agents.orca.loader import MAIN_CONFIG_PATH as ORCA_MAIN_CONFIG_PATH
+from ..agents.ralph.loader import MAIN_CONFIG_PATH as RALPH_MAIN_CONFIG_PATH
 from ..agents.skill_prompt import render_skill_instructions as render_skill_instructions
 from ..config import AgentConfig as AgentConfig
 from ..config import agent_config_artifact_filename as agent_config_artifact_filename

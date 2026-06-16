@@ -751,6 +751,7 @@ def start_agent_run_task(
     user_id: str,
     app_name: str,
     depth: int = 0,
+    suppress_task_notification: bool = False,
 ) -> dict[str, Any]:
   resolved_model_config_id = validate_model_config_id(
       model_config_id or _session_model_config_id(session_id)
@@ -796,6 +797,7 @@ def start_agent_run_task(
       "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
       "summary_artifact": None,
       "depth": depth,
+      "suppress_task_notification": bool(suppress_task_notification),
   }
   save_task(task)
   append_task_event(
@@ -867,6 +869,7 @@ def start_system_agent_run_task(
     session_id: str,
     user_id: str,
     app_name: str,
+    suppress_task_notification: bool = False,
 ) -> dict[str, Any]:
   agent_config = AgentConfig.model_validate(config)
   resolved_model_config_id = resolve_agent_config_model_config_id(
@@ -919,6 +922,7 @@ def start_system_agent_run_task(
       "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
       "summary_artifact": None,
       "save_parent_summary": False,
+      "suppress_task_notification": bool(suppress_task_notification),
   }
   save_task(task)
   append_task_event(

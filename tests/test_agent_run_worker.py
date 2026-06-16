@@ -12,6 +12,7 @@ from src.agent_run_worker import _has_child_tasks
 from src.agent_run_worker import _load_agent_config
 from src.agent_run_worker import _load_task_agent
 from src.agent_run_worker import _run_langgraph_task
+from src.agent_run_worker import _run_native_task
 from src.agent_run_worker import _run_child_agent_with_retries
 from src.agent_run_worker import _task_prompt
 from src.runner import APP_NAME
@@ -343,6 +344,65 @@ def test_run_langgraph_task_returns_final_text_and_logs_events(tmp_path, monkeyp
     )
     assert [item["event"]["kind"] for item in stored] == kinds
     assert stored[0]["turn_id"] == "session:child-session"
+
+  asyncio.run(run())
+
+
+def test_run_native_browser_task_returns_final_text_and_logs_events(tmp_path, monkeypatch):
+  async def run():
+    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
+    log = io.StringIO()
+
+    async def fake_runner(**kwargs):
+      await kwargs["emit_event"]({"id": "evt-start", "kind": "browser.started"})
+      await kwargs["emit_event"](
+          {
+              "id": "evt-final",
+              "kind": "agent_text",
+              "payload": {"text": "browser done", "final": True},
+          }
+      )
+      from src.run_outcome import RunOutcome
+
+      return RunOutcome(final_text="browser done")
+
+    monkeypatch.setattr(
+        "src.agent_run_worker.load_native_agent",
+        lambda agent_id: fake_runner,
+    )
+
+    final_text = await _run_native_task(
+        task={
+            "kind": "run_agent",
+            "agent_runtime": "native",
+            "agent_id": "browser",
+            "prompt": "Open a page.",
+            "context": "",
+            "project_root": str(tmp_path),
+            "session_id": "parent-session",
+            "child_session_id": "child-browser-session",
+            "user_id": "user",
+        },
+        log_handle=log,
+        session_service=HandaSessionService(root=str(tmp_path / ".handa")),
+        storage_root=tmp_path / ".handa",
+    )
+
+    records = [json.loads(line) for line in log.getvalue().splitlines()]
+    assert final_text == "browser done"
+    assert [record["kind"] for record in records] == [
+        "browser.started",
+        "agent_text",
+    ]
+    stored = RuntimeEventStore(tmp_path / ".handa").list_events(
+        session_id="child-browser-session",
+        runtime="native",
+    )
+    assert [item["event"]["kind"] for item in stored] == [
+        "browser.started",
+        "agent_text",
+    ]
+    assert stored[0]["turn_id"] == "session:child-browser-session"
 
   asyncio.run(run())
 

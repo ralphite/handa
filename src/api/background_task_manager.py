@@ -100,7 +100,7 @@ class BackgroundTaskManager:
     for event in list_task_events(session_id=session_id, limit=200):
       if event.get("kind") not in TERMINAL_TASK_EVENTS:
         continue
-      if self._is_web_turn_task(session_id, event.get("task_id")):
+      if self._should_skip_task_notification(session_id, event.get("task_id")):
         continue
       task_id = str(event.get("task_id") or "").strip()
       source_event_id = str(event.get("id") or "").strip()
@@ -233,7 +233,7 @@ class BackgroundTaskManager:
       seen.add(parent.id)
       current = parent
 
-  def _is_web_turn_task(self, session_id: str, task_id: Any) -> bool:
+  def _should_skip_task_notification(self, session_id: str, task_id: Any) -> bool:
     resolved = str(task_id or "").strip()
     if not resolved:
       return False
@@ -241,7 +241,10 @@ class BackgroundTaskManager:
       task = load_task(resolved, session_id=session_id)
     except (FileNotFoundError, KeyError, ValueError):
       return False
-    return str(task.get("kind") or "") == "web_turn"
+    return (
+        str(task.get("kind") or "") == "web_turn"
+        or bool(task.get("suppress_task_notification"))
+    )
 
   async def _finalize_waiting_parent_task_if_ready(
       self,

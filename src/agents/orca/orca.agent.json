@@ -1,7 +1,7 @@
 {
-  "name": "orca_langgraph",
+  "name": "orca",
   "model_config_id": "gemini-3.1-pro-high",
-  "description": "A coding-focused LangGraph agent for local repository work.",
+  "description": "A coding-focused framework-free agent for local repository work.",
   "tools": [
     "run_agent",
     "agents_save_config",

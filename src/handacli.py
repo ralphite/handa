@@ -31,9 +31,7 @@ from pydantic import Field
 HandaCliStatus = Literal["completed", "failed", "cancelled", "waiting_input"]
 
 DEFAULT_API_URL = "http://127.0.0.1:5086"
-# The CLI keeps the ADK Orca variant as its default; the web UI's own default
-# (orca) is a separate product surface.
-DEFAULT_AGENT_ID = "orca_adk"
+DEFAULT_AGENT_ID = "orca"
 POLL_INTERVAL_SEC = 1.0
 # A transient API outage (e.g. a web restart) must not fail a run whose
 # worker is still alive out of process; tolerate consecutive poll errors.

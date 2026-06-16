@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component 
 import { useDictation } from '../composables/useDictation'
 import { useOptimizePrompt } from '../composables/useOptimizePrompt'
 import type { BackendAgentDefinition, BackendModelConfigOption } from '../api/types'
-import { DEFAULT_AGENT_ID } from '../agentDefaults'
+import { COMPOSER_AGENT_IDS, DEFAULT_AGENT_ID } from '../agentDefaults'
 import type { ContextUsageSummary, EditMessagePayload, MessageAttachment, PendingUserMessage, SendPromptPayload } from '../types'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ContextUsageDialog from './ContextUsageDialog.vue'
@@ -83,7 +83,6 @@ interface ModelOptionDisplay {
 
 const MODEL_TIER_SUFFIXES = new Set(['Low', 'Medium', 'High', 'Small'])
 const GEMINI_LABEL_PREFIX = /^Gemini\s+/i
-const COMPOSER_AGENT_IDS = new Set(['orca_adk', 'orca'])
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 240
 const SLASH_COMMAND_ICONS: Record<SlashCommandKind, Component> = { model: Box }
 

@@ -34,6 +34,25 @@ from .runtime_event_store import RuntimeEventStore
 
 SESSION_ID_RANDOM_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz"
 SESSION_ID_RANDOM_LENGTH = 6
+ORCA_HISTORY_STATE_KEY = "handa:orca_history"
+ORCA_PENDING_ROUNDS_STATE_KEY = "handa:orca_pending_rounds"
+BROWSER_HISTORY_STATE_KEY = "handa:browser_history"
+BROWSER_PENDING_ROUNDS_STATE_KEY = "handa:browser_pending_rounds"
+PENDING_USER_INPUT_STATE_KEY = "handa:pending_user_input"
+ORCA_HISTORY_BOUNDARY_EVENT_KIND = "orca.history_boundary"
+BROWSER_HISTORY_BOUNDARY_EVENT_KIND = "browser.history_boundary"
+NATIVE_HISTORY_SPECS = (
+    (
+        ORCA_HISTORY_BOUNDARY_EVENT_KIND,
+        ORCA_HISTORY_STATE_KEY,
+        ORCA_PENDING_ROUNDS_STATE_KEY,
+    ),
+    (
+        BROWSER_HISTORY_BOUNDARY_EVENT_KIND,
+        BROWSER_HISTORY_STATE_KEY,
+        BROWSER_PENDING_ROUNDS_STATE_KEY,
+    ),
+)
 
 
 def _random_session_segment() -> str:
@@ -229,6 +248,15 @@ class HandaSessionService(BaseSessionService):
         state.pop(key, None)
       if source_turn_ids is not None:
         state = self._state_after_truncate(state, source_turn_ids)
+        state = self._state_after_native_truncate(
+            state,
+            _filtered_runtime_events(
+                self._runtime_events,
+                source_session_id=source_session_id,
+                runtime="native",
+                source_turn_ids=source_turn_ids,
+            ),
+        )
       state.update(state_updates or {})
       target = _new_session(app_name, user_id, state, target_session_id)
       self._write_session_unlocked(target)
@@ -293,6 +321,8 @@ class HandaSessionService(BaseSessionService):
       )
       if runtime == "langgraph":
         self._truncate_langgraph_thread(session_id, kept_events=filtered)
+      elif runtime == "native":
+        self._truncate_native_history(session_id, kept_events=filtered)
     self._prune_artifacts(session_id, artifact_refs)
     return stored
 
@@ -316,6 +346,22 @@ class HandaSessionService(BaseSessionService):
       truncate_thread_after(db_path, thread_id=session_id, checkpoint_id=boundary)
       return
     delete_thread(db_path, thread_id=session_id)
+
+  def _truncate_native_history(
+      self,
+      session_id: str,
+      *,
+      kept_events: list[dict[str, Any]],
+  ) -> None:
+    """Roll framework-free agent histories back to the last kept turn."""
+    path = session_dir(self.root, session_id)
+    with file_lock(_session_lock_path(path)):
+      stored = self._read_session_metadata(session_id)
+      if stored is None:
+        return
+      stored.state = self._state_after_native_truncate(stored.state or {}, kept_events)
+      stored.last_update_time = platform_time.get_time()
+      self._write_session_unlocked(stored)
 
   async def append_event(self, session: Session, event: Event) -> Event:
     return await asyncio.to_thread(self._append_event_sync, session, event)
@@ -584,6 +630,23 @@ class HandaSessionService(BaseSessionService):
       ]
     return next_state
 
+  @staticmethod
+  def _state_after_native_truncate(
+      state: dict[str, Any],
+      kept_events: list[dict[str, Any]],
+  ) -> dict[str, Any]:
+    next_state = dict(state)
+    for boundary_kind, history_key, pending_rounds_key in NATIVE_HISTORY_SPECS:
+      history_length = _last_native_history_length(kept_events, boundary_kind)
+      history = next_state.get(history_key)
+      if isinstance(history, list) and history_length is not None:
+        next_state[history_key] = history[:history_length]
+      else:
+        next_state.pop(history_key, None)
+      next_state.pop(pending_rounds_key, None)
+    next_state.pop(PENDING_USER_INPUT_STATE_KEY, None)
+    return next_state
+
   def _filter_session_events(
       self,
       session: Session,
@@ -648,6 +711,39 @@ def _last_checkpoint_marker(events: list[dict[str, Any]]) -> str | None:
     if text:
       return text
   return None
+
+
+def _last_native_history_length(
+    events: list[dict[str, Any]],
+    boundary_kind: str,
+) -> int | None:
+  for item in reversed(events):
+    raw_event = item.get("event")
+    if not isinstance(raw_event, dict):
+      continue
+    if str(raw_event.get("kind") or "") != boundary_kind:
+      continue
+    payload = raw_event.get("payload")
+    value = payload.get("history_length") if isinstance(payload, dict) else None
+    try:
+      return max(0, int(value))
+    except (TypeError, ValueError):
+      return None
+  return None
+
+
+def _filtered_runtime_events(
+    store: RuntimeEventStore,
+    *,
+    source_session_id: str,
+    runtime: str,
+    source_turn_ids: set[str],
+) -> list[dict[str, Any]]:
+  return [
+      item
+      for item in store.list_events(session_id=source_session_id, runtime=runtime)
+      if _event_turn_id(item) is None or _event_turn_id(item) in source_turn_ids
+  ]
 
 
 def _artifact_matches_refs(

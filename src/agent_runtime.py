@@ -9,11 +9,12 @@ from .agents.handa_adk.loader import list_agents as list_adk_agents
 from .config import load_agent_config_from_path
 
 
-AgentRuntime = Literal["adk", "langgraph"]
+AgentRuntime = Literal["adk", "langgraph", "native"]
 DEFAULT_WEB_AGENT_ID = "orca"
 MAIN_AGENT_LABELS = {
     "orca_adk": "Orca ADK",
     "orca": "Orca",
+    "orca_langgraph": "Orca LangGraph",
 }
 
 
@@ -35,6 +36,8 @@ class AgentDefinition:
 
 
 def list_agent_definitions() -> list[AgentDefinition]:
+  native_definitions = _native_agent_definitions()
+  native_ids = {definition.id for definition in native_definitions}
   definitions = [
       AgentDefinition(
           id=agent_id,
@@ -44,9 +47,11 @@ def list_agent_definitions() -> list[AgentDefinition]:
           description="Handa ADK agent",
       )
       for agent_id in list_adk_agents()
+      if agent_id not in native_ids
   ]
+  definitions.extend(native_definitions)
   definitions.extend(_langgraph_agent_definitions())
-  return sorted(definitions, key=lambda item: (item.runtime, item.id))
+  return sorted(definitions, key=_definition_sort_key)
 
 
 def get_agent_definition(agent_id: str) -> AgentDefinition:
@@ -60,6 +65,21 @@ def get_agent_definition(agent_id: str) -> AgentDefinition:
 
 def validate_agent_id(agent_id: str) -> str:
   return get_agent_definition(agent_id).id
+
+
+def resolve_agent_id_for_runtime(agent_id: str, agent_runtime: str) -> str:
+  """Resolve legacy ids that were renamed inside a specific runtime."""
+  normalized = agent_id.strip()
+  runtime = agent_runtime.strip()
+  if runtime == "langgraph" and normalized == "orca":
+    return "orca_langgraph"
+  definition = get_agent_definition(normalized)
+  if definition.runtime != runtime:
+    raise ValueError(
+        f"Agent {normalized!r} uses runtime {definition.runtime!r}, "
+        f"not {runtime!r}."
+    )
+  return definition.id
 
 
 def agent_config_runtime_snapshot(
@@ -89,3 +109,18 @@ def _langgraph_agent_definitions() -> list[AgentDefinition]:
   from .agents.handa_langgraph.loader import list_agent_definitions
 
   return list_agent_definitions()
+
+
+def _native_agent_definitions() -> list[AgentDefinition]:
+  from .agents.native_loader import list_agent_definitions
+
+  return list_agent_definitions()
+
+
+def _definition_sort_key(definition: AgentDefinition) -> tuple[int, str]:
+  primary = {
+      "native": 0,
+      "adk": 1,
+      "langgraph": 2,
+  }.get(definition.runtime, 9)
+  return (primary, definition.id)

@@ -13,6 +13,11 @@ from .tool_summary import summarize_tool_response
 _LIFECYCLE_EVENT_KINDS = frozenset({
     "langgraph.started",
     "langgraph.checkpoint",
+    "orca.started",
+    "orca.history_boundary",
+    "browser.started",
+    "browser.history_boundary",
+    "ralph.started",
 })
 
 
@@ -21,7 +26,7 @@ def project_runtime_event(
     *,
     runtime: str,
 ) -> list[dict[str, Any]]:
-  if runtime != "langgraph":
+  if runtime == "adk":
     return [_fallback_projection(event, runtime=runtime)]
   kind = str(event.get("kind") or "")
   if kind in _LIFECYCLE_EVENT_KINDS:
@@ -29,7 +34,7 @@ def project_runtime_event(
   payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
   projected: list[dict[str, Any]] = []
 
-  if kind == "langgraph.tool_call":
+  if _is_runtime_kind(kind, "tool_call"):
     name = str(payload.get("name") or "")
     args = payload.get("args") if isinstance(payload.get("args"), dict) else {}
     projected.append(
@@ -47,7 +52,7 @@ def project_runtime_event(
             ),
         }
     )
-  elif kind == "langgraph.tool_result":
+  elif _is_runtime_kind(kind, "tool_result"):
     name = str(payload.get("name") or "")
     response = payload.get("result")
     if response is None:
@@ -75,7 +80,7 @@ def project_runtime_event(
     artifact_delta = _artifact_delta(name, response)
     if artifact_delta is not None:
       projected.append(artifact_delta)
-  elif kind == "langgraph.model_text":
+  elif _is_runtime_kind(kind, "model_text"):
     text = str(payload.get("text") or "")
     if text:
       projected.append(
@@ -103,7 +108,7 @@ def project_runtime_event(
               },
           }
       )
-  elif kind == "langgraph.user_input_requested":
+  elif _is_runtime_kind(kind, "user_input_requested"):
     pending = (
         payload.get("pending_user_input")
         if isinstance(payload.get("pending_user_input"), dict)
@@ -117,7 +122,7 @@ def project_runtime_event(
             "payload": _jsonable({"pending_user_input": pending}),
         }
     )
-  elif kind == "langgraph.user_input_result":
+  elif _is_runtime_kind(kind, "user_input_result"):
     projected.append(
         {
             "kind": "user_input_result",
@@ -130,7 +135,7 @@ def project_runtime_event(
             ),
         }
     )
-  elif kind in {"error", "langgraph.error"}:
+  elif kind in {"error", "langgraph.error", "orca.error", "browser.error", "ralph.error"}:
     projected.append(
         {
             "kind": "error",
@@ -159,6 +164,15 @@ def _fallback_projection(event: dict[str, Any], *, runtime: str) -> dict[str, An
               **payload,
           }
       ),
+  }
+
+
+def _is_runtime_kind(kind: str, suffix: str) -> bool:
+  return kind in {
+      f"langgraph.{suffix}",
+      f"orca.{suffix}",
+      f"browser.{suffix}",
+      f"ralph.{suffix}",
   }
 
 
