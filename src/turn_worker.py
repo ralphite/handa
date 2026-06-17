@@ -66,7 +66,6 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
 
   try:
     outcome = await run_agent_invocation(
-        services=services,
         session_id=session_id,
         user_id=str(task.get("user_id") or "user"),
         agent_id=agent_id,
@@ -75,7 +74,6 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
         on_event=on_event,
         project_root=task.get("project_root"),
         model_config_id=task.get("model_config_id"),
-        streaming_mode_enabled=bool(task.get("streaming_mode_enabled", True)),
         resume_user_input=task.get("resume_user_input"),
     )
 

@@ -95,7 +95,6 @@ def get_agent_context_usage(
   project_root = project["root_path"] if project else None
   breakdown = build_static_context_usage_breakdown(
       agent_id=definition.id,
-      agent_runtime=definition.runtime,
       project_root=project_root,
   )
   return {

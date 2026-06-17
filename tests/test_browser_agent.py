@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from google.genai import types
 
-from src.agents.browser import runner as browser
+from src.agents import native_runner
 from src.agents.browser.loader import MAIN_CONFIG_PATH
 from src.agents.browser.runner import run
 from src.agents.orca import tools as native_tools
@@ -72,7 +72,7 @@ def test_browser_runs_native_tool_loop(tmp_path, monkeypatch):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(browser, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     events = []
 

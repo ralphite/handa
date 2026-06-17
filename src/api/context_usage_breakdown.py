@@ -69,7 +69,6 @@ async def build_context_usage_breakdown(
       ctx,
       task=task,
       agent_id=agent_id,
-      agent_runtime=agent_runtime,
   )
   sources = {
       "user_messages": _user_messages_text(ctx, session, task=task, prompt=prompt),
@@ -88,7 +87,6 @@ async def build_context_usage_breakdown(
 def build_static_context_usage_breakdown(
     *,
     agent_id: str,
-    agent_runtime: str,
     project_root: str | None,
 ) -> list[dict[str, Any]]:
   """Estimate the context an agent occupies before any conversation happens.
@@ -97,7 +95,7 @@ def build_static_context_usage_breakdown(
   tool definitions, skills, and project config. Counts are raw estimates
   (no runtime token total exists yet to scale against).
   """
-  config = load_agent_config_for_runtime(agent_id=agent_id, agent_runtime=agent_runtime)
+  config = load_agent_config_for_agent(agent_id)
   sources = {
       "system_instruction": _safe_source(lambda: _prompt_text(config)),
       "system_tools": _safe_source(lambda: _tools_text(config)),
@@ -260,7 +258,6 @@ async def _load_agent_config(
     *,
     task: dict[str, Any] | None,
     agent_id: str,
-    agent_runtime: str,
 ) -> AgentConfig | None:
   if task and task.get("kind") == "system_agent_run" and isinstance(task.get("config"), dict):
     return AgentConfig.model_validate(task["config"])
@@ -268,21 +265,17 @@ async def _load_agent_config(
     config = await _load_agent_run_config(ctx, task)
     if config is not None:
       return config
-  return load_agent_config_for_runtime(agent_id=agent_id, agent_runtime=agent_runtime)
+  return load_agent_config_for_agent(agent_id)
 
 
-def load_agent_config_for_runtime(
-    *,
-    agent_id: str,
-    agent_runtime: str,
-) -> AgentConfig | None:
-  if agent_runtime == "native" and agent_id == "orca":
-    return load_agent_config_from_path(ORCA_MAIN_CONFIG_PATH)
-  if agent_runtime == "native" and agent_id == "browser":
-    return load_agent_config_from_path(BROWSER_MAIN_CONFIG_PATH)
-  if agent_runtime == "native" and agent_id == "ralph":
-    return load_agent_config_from_path(RALPH_MAIN_CONFIG_PATH)
-  return None
+def load_agent_config_for_agent(agent_id: str) -> AgentConfig | None:
+  config_paths = {
+      "orca": ORCA_MAIN_CONFIG_PATH,
+      "browser": BROWSER_MAIN_CONFIG_PATH,
+      "ralph": RALPH_MAIN_CONFIG_PATH,
+  }
+  path = config_paths.get(agent_id)
+  return load_agent_config_from_path(path) if path is not None else None
 
 
 async def _load_agent_run_config(

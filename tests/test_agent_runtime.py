@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from src.agent_runtime import agent_config_runtime_snapshot
 from src.agent_runtime import get_agent_definition
 from src.agent_runtime import list_agent_definitions
 
@@ -20,19 +19,10 @@ def test_agent_registry_lists_native_agents_only():
   assert definitions["ralph"].label == "ralph"
 
 
-def test_agent_definition_runtime_snapshot_is_persistable():
-  snapshot = get_agent_definition("orca").runtime_snapshot()
+def test_agent_definition_excludes_entrypoint_from_model_dump():
+  definition = get_agent_definition("orca")
 
-  assert snapshot == {"agent_runtime": "native"}
-  assert "entrypoint" not in get_agent_definition("orca").model_dump()
-  assert get_agent_definition("browser").runtime_snapshot() == {"agent_runtime": "native"}
-  assert get_agent_definition("ralph").runtime_snapshot() == {"agent_runtime": "native"}
-
-
-def test_agent_config_snapshot_uses_native_runtime():
-  snapshot = agent_config_runtime_snapshot(
-      config_name="builder",
-      config_version=2,
-  )
-
-  assert snapshot == {"agent_runtime": "native"}
+  assert definition.runtime == "native"
+  assert "entrypoint" not in definition.model_dump()
+  assert get_agent_definition("browser").runtime == "native"
+  assert get_agent_definition("ralph").runtime == "native"

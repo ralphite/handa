@@ -14,6 +14,7 @@ from google import genai
 from google.genai import types
 
 from ..config import AgentConfig
+from ..config import load_agent_config_from_path
 from ..instructions import render_instruction
 from ..message_parts import build_message_parts
 from ..model_configs import resolve_model_config
@@ -39,6 +40,62 @@ AgentEventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 BuildSessionContext = Callable[..., Any]
 BuildToolset = Callable[[list[str], Any], Any]
 GenerateModelResponse = Callable[..., Awaitable[Any]]
+
+
+def make_native_agent_run(
+    *,
+    config_path: Path,
+    prefix: str,
+    display_name: str,
+    build_session_context: BuildSessionContext,
+    build_toolset: BuildToolset,
+    default_max_output_tokens: int = 8192,
+) -> Callable[..., Awaitable[RunOutcome]]:
+  """Build a registered agent's ``run`` entrypoint from a config file + prefix.
+
+  All per-agent event and session-state keys are derived from ``prefix`` so each
+  agent keeps its own persisted history namespace (e.g. ``handa:orca_history``).
+  """
+  config = load_agent_config_from_path(config_path)
+
+  async def run(
+      *,
+      prompt: str,
+      context: str = "",
+      attachments: list[dict[str, Any]] | None = None,
+      project_root: str,
+      emit_event: AgentEventEmitter,
+      model_config_id: str | None = None,
+      session_id: str | None = None,
+      user_id: str | None = None,
+      resume_user_input: dict[str, Any] | None = None,
+  ) -> RunOutcome:
+    return await run_native_agent(
+        config=config,
+        prompt=prompt,
+        context=context,
+        attachments=attachments,
+        project_root=project_root,
+        emit_event=emit_event,
+        build_session_context=build_session_context,
+        build_toolset=build_toolset,
+        generate_model_response=generate_model_response,
+        model_config_id=model_config_id,
+        session_id=session_id,
+        user_id=user_id,
+        resume_user_input=resume_user_input,
+        display_name=display_name,
+        event_prefix=prefix,
+        event_id_prefix=prefix,
+        call_id_prefix=f"{prefix}_call",
+        fallback_session_prefix=prefix,
+        history_state_key=f"handa:{prefix}_history",
+        pending_rounds_state_key=f"handa:{prefix}_pending_rounds",
+        history_boundary_event_kind=f"{prefix}.history_boundary",
+        default_max_output_tokens=default_max_output_tokens,
+    )
+
+  return run
 
 
 async def run_native_agent(

@@ -2431,7 +2431,6 @@ def test_execute_turn_uses_project_root(tmp_path, monkeypatch):
     seen["project_root"] = kwargs["project_root"]
     seen["input_text"] = kwargs["input_text"]
     seen["model_config_id"] = kwargs["model_config_id"]
-    seen["streaming_mode_enabled"] = kwargs["streaming_mode_enabled"]
     return RunOutcome(final_text="done")
 
   monkeypatch.setattr(
@@ -2454,19 +2453,12 @@ def test_execute_turn_uses_project_root(tmp_path, monkeypatch):
       title="hello",
       input_text="hello",
   )
-  ctx.db.set_user_setting(
-      user_id=ctx.settings.user_id,
-      key="streaming_mode_enabled",
-      value="false",
-  )
-
   asyncio.run(execute_turn(ctx, invocation["id"]))
   fetched = ctx.db.get_turn(invocation["id"])
 
   assert seen["project_root"] == str(project_path)
   assert seen["input_text"] == "hello"
   assert seen["model_config_id"] == "gemini-3.5-flash"
-  assert seen["streaming_mode_enabled"] is False
   assert fetched["status"] == "completed"
 
 
@@ -2481,7 +2473,7 @@ def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
   from types import SimpleNamespace
 
   from google.genai import types
-  from src.agents.orca import runner as orca_runner
+  from src.agents import native_runner
 
   scripted = [
       types.Content(
@@ -2503,7 +2495,7 @@ def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
     content = scripted[len(call_count) - 1]
     return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
 
-  monkeypatch.setattr(orca_runner, "_generate_model_response", fake_generate)
+  monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
   app = create_app()
   client = TestClient(app)

@@ -1,6 +1,6 @@
 export interface BackendAgentDefinition {
   id: string
-  runtime: 'native' | string
+  runtime: string
   label: string
   description: string
 }

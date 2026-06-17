@@ -805,11 +805,7 @@ def _is_agent_task(task: dict[str, Any]) -> bool:
 
 
 def _reject_unknown_tools(tools: list[str]) -> None:
-  """Fail fast on tool names that no runtime can resolve (typos).
-
-  Validated against the full cross-runtime catalog so a tool that is valid for
-  whichever runtime runs the config is never rejected.
-  """
+  """Fail fast on tool names the native runtime cannot resolve (typos)."""
   unknown = [name for name in tools if name not in known_agent_tool_names()]
   if unknown:
     raise ValueError(f"Unknown agent tools: {', '.join(unknown)}")

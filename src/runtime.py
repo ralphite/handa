@@ -14,9 +14,7 @@ import time
 from typing import Any
 import uuid
 
-from .agent_runtime import agent_config_runtime_snapshot
 from .agent_runtime import get_agent_definition
-from .agent_runtime import system_agent_config_runtime_snapshot
 from .config import AgentConfig
 from .config import resolve_agent_config_model_config_id
 from .model_configs import validate_model_config_id
@@ -739,6 +737,69 @@ def start_background_task(
   return task
 
 
+def _allocate_child_session_id(parent_session_id: str) -> str:
+  for _ in range(100):
+    child_session_id = create_child_session_id(parent_session_id)
+    child_session_file = (
+        session_dir(get_storage_root(), child_session_id) / "session.json"
+    )
+    if not child_session_file.exists():
+      return child_session_id
+  raise RuntimeError("Could not create a unique child session id.")
+
+
+def _base_run_task(
+    *,
+    task_id: str,
+    session_id: str,
+    kind: str,
+    child_session_id: str,
+    user_id: str,
+    summary: str,
+) -> dict[str, Any]:
+  return {
+      "id": task_id,
+      "session_id": session_id,
+      "kind": kind,
+      "project_root": str(get_project_root()),
+      "agent_runtime": "native",
+      "child_session_id": child_session_id,
+      "user_id": user_id,
+      "summary": summary,
+      "status": "queued",
+      "created_at": now_iso(),
+      "created_ts": now_ts(),
+      "started_at": None,
+      "finished_at": None,
+      "returncode": None,
+      "worker_pid": None,
+      "command_pid": None,
+      "cancel_requested_at": None,
+      "log_path": str(task_log_file(task_id, session_id=session_id)),
+      "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
+      "summary_artifact": None,
+  }
+
+
+def _launch_agent_run_worker(
+    task: dict[str, Any], *, session_id: str, task_id: str
+) -> dict[str, Any]:
+  product_root = get_product_root()
+  env = os.environ.copy()
+  env["HANDA_STORAGE_ROOT"] = str(get_storage_root())
+  process = subprocess.Popen(
+      [sys.executable, "-m", "src.agent_run_worker", session_id, task_id],
+      cwd=str(product_root),
+      env=env,
+      stdout=subprocess.DEVNULL,
+      stderr=subprocess.DEVNULL,
+      start_new_session=True,
+  )
+  task["worker_pid"] = process.pid
+  save_task(task)
+  return task
+
+
 def start_agent_run_task(
     config_name: str,
     prompt: str,
@@ -758,44 +819,21 @@ def start_agent_run_task(
   )
   ensure_task_dirs(session_id)
   task_id = f"task_{uuid.uuid4().hex[:10]}"
-  for _ in range(100):
-    child_session_id = create_child_session_id(session_id)
-    child_session_file = (
-        session_dir(get_storage_root(), child_session_id) / "session.json"
-    )
-    if not child_session_file.exists():
-      break
-  else:
-    raise RuntimeError("Could not create a unique child session id.")
+  child_session_id = _allocate_child_session_id(session_id)
   task = {
-      "id": task_id,
-      "session_id": session_id,
-      "kind": "agent_run",
-      "project_root": str(get_project_root()),
+      **_base_run_task(
+          task_id=task_id,
+          session_id=session_id,
+          kind="agent_run",
+          child_session_id=child_session_id,
+          user_id=user_id,
+          summary=summary or f"Run agent config {config_name}",
+      ),
       "config_name": config_name,
       "config_version": config_version,
-      **agent_config_runtime_snapshot(
-          config_name=config_name,
-          config_version=config_version,
-      ),
       "model_config_id": resolved_model_config_id,
       "prompt": prompt,
       "context": context or "",
-      "child_session_id": child_session_id,
-      "user_id": user_id,
-      "summary": summary or f"Run agent config {config_name}",
-      "status": "queued",
-      "created_at": now_iso(),
-      "created_ts": now_ts(),
-      "started_at": None,
-      "finished_at": None,
-      "returncode": None,
-      "worker_pid": None,
-      "command_pid": None,
-      "cancel_requested_at": None,
-      "log_path": str(task_log_file(task_id, session_id=session_id)),
-      "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
-      "summary_artifact": None,
       "depth": depth,
       "suppress_task_notification": bool(suppress_task_notification),
   }
@@ -833,30 +871,7 @@ def start_agent_run_task(
       child_session_id,
   )
 
-  product_root = get_product_root()
-  env = os.environ.copy()
-  env["HANDA_STORAGE_ROOT"] = str(get_storage_root())
-  process = subprocess.Popen(
-      [sys.executable, "-m", "src.agent_run_worker", session_id, task_id],
-      cwd=str(product_root),
-      env=env,
-      stdout=subprocess.DEVNULL,
-      stderr=subprocess.DEVNULL,
-      start_new_session=True,
-  )
-  task["worker_pid"] = process.pid
-  save_task(task)
-  return task
-
-
-
-
-
-
-
-
-
-
+  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def start_system_agent_run_task(
@@ -885,42 +900,22 @@ def start_system_agent_run_task(
     raise ValueError("System agent config must include a name.")
 
   task_id = f"task_{uuid.uuid4().hex[:10]}"
-  for _ in range(100):
-    child_session_id = create_child_session_id(session_id)
-    child_session_file = (
-        session_dir(get_storage_root(), child_session_id) / "session.json"
-    )
-    if not child_session_file.exists():
-      break
-  else:
-    raise RuntimeError("Could not create a unique child session id.")
+  child_session_id = _allocate_child_session_id(session_id)
 
   task = {
-      "id": task_id,
-      "session_id": session_id,
-      "kind": "system_agent_run",
-      "project_root": str(get_project_root()),
+      **_base_run_task(
+          task_id=task_id,
+          session_id=session_id,
+          kind="system_agent_run",
+          child_session_id=child_session_id,
+          user_id=user_id,
+          summary=summary or f"Run system agent {config_name}",
+      ),
       "config_name": config_name,
-      **system_agent_config_runtime_snapshot(config_name),
       "config": normalized_config,
       "model_config_id": resolved_model_config_id,
       "prompt": prompt,
       "context": context or "",
-      "child_session_id": child_session_id,
-      "user_id": user_id,
-      "summary": summary or f"Run system agent {config_name}",
-      "status": "queued",
-      "created_at": now_iso(),
-      "created_ts": now_ts(),
-      "started_at": None,
-      "finished_at": None,
-      "returncode": None,
-      "worker_pid": None,
-      "command_pid": None,
-      "cancel_requested_at": None,
-      "log_path": str(task_log_file(task_id, session_id=session_id)),
-      "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
-      "summary_artifact": None,
       "save_parent_summary": False,
       "suppress_task_notification": bool(suppress_task_notification),
   }
@@ -955,20 +950,7 @@ def start_system_agent_run_task(
       child_session_id,
   )
 
-  product_root = get_product_root()
-  env = os.environ.copy()
-  env["HANDA_STORAGE_ROOT"] = str(get_storage_root())
-  process = subprocess.Popen(
-      [sys.executable, "-m", "src.agent_run_worker", session_id, task_id],
-      cwd=str(product_root),
-      env=env,
-      stdout=subprocess.DEVNULL,
-      stderr=subprocess.DEVNULL,
-      start_new_session=True,
-  )
-  task["worker_pid"] = process.pid
-  save_task(task)
-  return task
+  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def start_run_agent_task(
@@ -983,41 +965,21 @@ def start_run_agent_task(
     depth: int = 0,
 ) -> dict[str, Any]:
   ensure_task_dirs(session_id)
-  definition = get_agent_definition(agent_id)
+  get_agent_definition(agent_id)  # validate the agent id exists
   task_id = f"task_{uuid.uuid4().hex[:10]}"
-  for _ in range(100):
-    child_session_id = create_child_session_id(session_id)
-    child_session_file = (
-        session_dir(get_storage_root(), child_session_id) / "session.json"
-    )
-    if not child_session_file.exists():
-      break
-  else:
-    raise RuntimeError("Could not create a unique child session id.")
+  child_session_id = _allocate_child_session_id(session_id)
   task = {
-      "id": task_id,
-      "session_id": session_id,
-      "kind": "run_agent",
-      "project_root": str(get_project_root()),
+      **_base_run_task(
+          task_id=task_id,
+          session_id=session_id,
+          kind="run_agent",
+          child_session_id=child_session_id,
+          user_id=user_id,
+          summary=summary or f"Run agent {agent_id}",
+      ),
       "agent_id": agent_id,
-      **definition.runtime_snapshot(),
       "prompt": prompt,
       "context": context or "",
-      "child_session_id": child_session_id,
-      "user_id": user_id,
-      "summary": summary or f"Run agent {agent_id}",
-      "status": "queued",
-      "created_at": now_iso(),
-      "created_ts": now_ts(),
-      "started_at": None,
-      "finished_at": None,
-      "returncode": None,
-      "worker_pid": None,
-      "command_pid": None,
-      "cancel_requested_at": None,
-      "log_path": str(task_log_file(task_id, session_id=session_id)),
-      "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
-      "summary_artifact": None,
       "depth": depth,
   }
   save_task(task)
@@ -1029,7 +991,7 @@ def start_run_agent_task(
       payload={
           "kind": "run_agent",
           "agent_id": agent_id,
-          "agent_runtime": definition.runtime,
+          "agent_runtime": task["agent_runtime"],
           "child_session_id": child_session_id,
           "depth": depth,
       },
@@ -1040,7 +1002,7 @@ def start_run_agent_task(
       "handa:parent_session_id": session_id,
       "handa:parent_task_id": task_id,
       "handa:target_agent_id": agent_id,
-      "handa:agent_runtime": definition.runtime,
+      "handa:agent_runtime": task["agent_runtime"],
       "handa:run_agent_prompt": prompt,
       "handa:agent_run_depth": depth + 1,
   }
@@ -1051,20 +1013,7 @@ def start_run_agent_task(
       child_session_id,
   )
 
-  product_root = get_product_root()
-  env = os.environ.copy()
-  env["HANDA_STORAGE_ROOT"] = str(get_storage_root())
-  process = subprocess.Popen(
-      [sys.executable, "-m", "src.agent_run_worker", session_id, task_id],
-      cwd=str(product_root),
-      env=env,
-      stdout=subprocess.DEVNULL,
-      stderr=subprocess.DEVNULL,
-      start_new_session=True,
-  )
-  task["worker_pid"] = process.pid
-  save_task(task)
-  return task
+  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def get_task_status(

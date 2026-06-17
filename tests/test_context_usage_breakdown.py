@@ -225,7 +225,6 @@ def test_exact_thought_tokens_survive_residual_scaling():
 def test_static_context_usage_breakdown_previews_orca():
   result = build_static_context_usage_breakdown(
       agent_id="orca",
-      agent_runtime="native",
       project_root=None,
   )
 
@@ -243,7 +242,6 @@ def test_static_context_usage_breakdown_previews_orca():
 def test_static_context_usage_breakdown_previews_browser():
   result = build_static_context_usage_breakdown(
       agent_id="browser",
-      agent_runtime="native",
       project_root=None,
   )
 
@@ -259,7 +257,6 @@ def test_static_context_usage_breakdown_previews_browser():
 def test_static_context_usage_breakdown_previews_ralph():
   result = build_static_context_usage_breakdown(
       agent_id="ralph",
-      agent_runtime="native",
       project_root=None,
   )
 

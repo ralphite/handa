@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from collections.abc import Callable
+from contextlib import nullcontext
 import logging
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,6 @@ from .agent_runtime import get_agent_definition
 from .agents.native_loader import load_agent as load_native_agent
 from .run_outcome import RunOutcome
 from .run_retry import run_with_retries
-from .runner import HandaServices
 from .runtime import get_project_root
 from .runtime import project_context
 
@@ -27,7 +27,6 @@ LOGGER.propagate = False
 
 async def run_agent_invocation(
     *,
-    services: HandaServices,
     session_id: str,
     user_id: str,
     agent_id: str,
@@ -36,37 +35,23 @@ async def run_agent_invocation(
     attachments: list[dict[str, Any]] | None = None,
     project_root: str | None = None,
     model_config_id: str | None = None,
-    streaming_mode_enabled: bool = True,
     resume_user_input: dict[str, Any] | None = None,
 ) -> RunOutcome:
-  _ = services, streaming_mode_enabled
-  if project_root:
-    with project_context(project_root):
-      return await _run_native_agent_invocation_in_project(
-          agent_id=agent_id,
-          session_id=session_id,
-          user_id=user_id,
-          input_text=input_text,
-          attachments=attachments,
-          on_event=on_event,
-          project_root=str(get_project_root()),
-          model_config_id=model_config_id,
-          resume_user_input=resume_user_input,
-      )
-  return await _run_native_agent_invocation_in_project(
-      agent_id=agent_id,
-      session_id=session_id,
-      user_id=user_id,
-      input_text=input_text,
-      attachments=attachments,
-      on_event=on_event,
-      project_root=str(get_project_root()),
-      model_config_id=model_config_id,
-      resume_user_input=resume_user_input,
-  )
+  with project_context(project_root) if project_root else nullcontext():
+    return await _run_agent_invocation_in_project(
+        agent_id=agent_id,
+        session_id=session_id,
+        user_id=user_id,
+        input_text=input_text,
+        attachments=attachments,
+        on_event=on_event,
+        project_root=str(get_project_root()),
+        model_config_id=model_config_id,
+        resume_user_input=resume_user_input,
+    )
 
 
-async def _run_native_agent_invocation_in_project(
+async def _run_agent_invocation_in_project(
     *,
     agent_id: str,
     session_id: str,
@@ -79,9 +64,6 @@ async def _run_native_agent_invocation_in_project(
     resume_user_input: dict[str, Any] | None = None,
 ) -> RunOutcome:
   definition = get_agent_definition(agent_id)
-  if definition.runtime != "native":
-    raise ValueError(f"Unsupported agent runtime: {definition.runtime!r}")
-
   runner = load_native_agent(definition.id)
   produced_output = False
 

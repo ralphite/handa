@@ -17,9 +17,6 @@ class AgentDefinition:
   label: str
   description: str = ""
 
-  def runtime_snapshot(self) -> dict[str, str]:
-    return {"agent_runtime": self.runtime}
-
   def model_dump(self) -> dict[str, str]:
     data = asdict(self)
     data.pop("entrypoint", None)
@@ -49,20 +46,6 @@ def resolve_agent_id_for_runtime(agent_id: str, agent_runtime: str) -> str:
     raise ValueError(f"Unsupported agent runtime: {runtime!r}. Handa only supports native agents.")
   definition = get_agent_definition(agent_id)
   return definition.id
-
-
-def agent_config_runtime_snapshot(
-    *,
-    config_name: str,
-    config_version: int | None,
-) -> dict[str, str]:
-  _ = config_name, config_version
-  return {"agent_runtime": "native"}
-
-
-def system_agent_config_runtime_snapshot(config_name: str) -> dict[str, str]:
-  _ = config_name
-  return {"agent_runtime": "native"}
 
 
 def _native_agent_definitions() -> list[AgentDefinition]:

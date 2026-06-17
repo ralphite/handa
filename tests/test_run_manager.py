@@ -26,7 +26,6 @@ def test_run_agent_invocation_calls_native_runner(tmp_path, monkeypatch):
 
   result = asyncio.run(
       run_agent_invocation(
-          services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
           agent_id="orca",
@@ -34,7 +33,6 @@ def test_run_agent_invocation_calls_native_runner(tmp_path, monkeypatch):
           on_event=on_event,
           project_root=str(tmp_path),
           model_config_id="gemini-3.5-flash",
-          streaming_mode_enabled=False,
       )
   )
 
@@ -65,7 +63,6 @@ def test_run_agent_invocation_keeps_project_agents_out_of_user_prompt(
 
   result = asyncio.run(
       run_agent_invocation(
-          services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
           agent_id="orca",
@@ -104,7 +101,6 @@ def test_run_agent_invocation_forwards_image_attachment(tmp_path, monkeypatch):
 
   result = asyncio.run(
       run_agent_invocation(
-          services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
           agent_id="orca",
@@ -144,7 +140,6 @@ def test_run_agent_invocation_retries_transient_error_before_output(tmp_path, mo
 
   result = asyncio.run(
       run_agent_invocation(
-          services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
           agent_id="orca",
@@ -184,8 +179,7 @@ def test_run_agent_invocation_does_not_retry_after_output(tmp_path, monkeypatch)
   with pytest.raises(APIError):
     asyncio.run(
         run_agent_invocation(
-            services=SimpleNamespace(),
-            session_id="session-1",
+              session_id="session-1",
             user_id="user",
             agent_id="orca",
             input_text="hello",
@@ -225,7 +219,6 @@ def test_run_agent_invocation_retries_after_started_before_output(tmp_path, monk
 
   result = asyncio.run(
       run_agent_invocation(
-          services=SimpleNamespace(),
           session_id="session-1",
           user_id="user",
           agent_id="orca",

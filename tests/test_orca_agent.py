@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from google.genai import types
 
-from src.agents.orca import runner as orca
+from src.agents import native_runner
 from src.agents.orca.runner import run
 
 
@@ -43,7 +43,7 @@ def test_orca_runs_react_tool_loop(tmp_path, monkeypatch):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     events = []
 
@@ -111,7 +111,7 @@ def test_orca_persists_history_across_turns(tmp_path, monkeypatch):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     async def emit_event(event):
       pass
@@ -161,7 +161,7 @@ def test_orca_reports_failed_tool_without_crashing(tmp_path, monkeypatch):
       calls.append(1)
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     events = []
 
@@ -208,7 +208,7 @@ def test_orca_continues_past_twenty_four_tool_rounds(tmp_path, monkeypatch):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     events = []
 
@@ -292,7 +292,7 @@ def test_orca_pauses_on_request_user_input_and_resumes(tmp_path, monkeypatch):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     events = []
 
@@ -367,7 +367,7 @@ def test_orca_returns_validation_error_without_pausing(tmp_path, monkeypatch):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     async def emit_event(event):
       pass
@@ -414,7 +414,7 @@ def test_orca_excludes_user_input_tool_for_child_runs(tmp_path, monkeypatch):
       captured_config["config"] = config
       return _model_response(_text("Child finished."))
 
-    monkeypatch.setattr(orca, "_generate_model_response", fake_generate)
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
 
     async def emit_event(event):
       pass

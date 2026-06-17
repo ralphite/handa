@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable
 from collections.abc import Callable
-from typing import Any
 
 from ..agent_runtime import AgentDefinition
 from ..run_outcome import RunOutcome
