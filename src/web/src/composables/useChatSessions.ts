@@ -798,7 +798,8 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     const source = activeSessionRecord.value
     if (!source || source.id === EMPTY_SESSION_ID || source.readOnly) return
     if (isLiveStatus(source.status)) {
-      sendError.value = 'Stop the current run before editing a message.'
+      sendError.value = ''
+      notifyActionError('Stop the current run before editing a message.')
       return
     }
     const prompt = payload.prompt.trim()
