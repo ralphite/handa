@@ -21,6 +21,8 @@ from ...contract.product import validate_model_config_id
 from ...contract.services import APP_NAME
 from ...contract.task_store import cancel_descendant_runs
 from ...contract.task_store import cancel_task
+from ...contract.task_store import list_task_notifications
+from ...contract.task_store import load_task
 from ...contract.task_store import now_iso
 from ...contract.storage import attachments_dir
 from ...contract.user_input import cancelled_response
@@ -88,6 +90,96 @@ def _active_seconds(turn: dict, waiting_seconds: float) -> float:
   return max(0.0, (end - start) - max(0.0, waiting_seconds))
 
 
+def _system_run_label(turn: dict) -> str | None:
+  if str(turn.get("trigger_kind") or "") != "task_notification":
+    return None
+  notification = _notification_for_turn(turn)
+  payload = notification.get("payload") if notification else {}
+  if not isinstance(payload, dict):
+    payload = {}
+
+  task_id = (
+      str((notification or {}).get("task_id") or "").strip()
+      or _notification_line_value(turn, "task_id")
+  )
+  task = _load_notification_task(str(turn.get("session_id") or ""), task_id)
+  task_kind = (
+      str((task or {}).get("kind") or "").strip()
+      or str(payload.get("task_kind") or "").strip()
+      or _notification_line_value(turn, "task_kind")
+  )
+  task_status = (
+      str((task or {}).get("status") or "").strip()
+      or str(payload.get("task_status") or "").strip()
+      or _notification_line_value(turn, "status")
+  )
+  subject = _system_run_subject(task_kind, task)
+  return f"{subject} {_system_run_status_label(task_status)}"
+
+
+def _notification_for_turn(turn: dict) -> dict | None:
+  session_id = str(turn.get("session_id") or "")
+  turn_id = str(turn.get("id") or "")
+  if not session_id or not turn_id:
+    return None
+  try:
+    notifications = list_task_notifications(session_id=session_id)
+  except (OSError, ValueError, KeyError):
+    return None
+  return next(
+      (
+          notification
+          for notification in notifications
+          if str(
+              notification.get("delivered_turn_id")
+              or notification.get("delivered_invocation_id")
+              or ""
+          ) == turn_id
+      ),
+      None,
+  )
+
+
+def _load_notification_task(session_id: str, task_id: str) -> dict | None:
+  if not session_id or not task_id:
+    return None
+  try:
+    return load_task(task_id, session_id=session_id)
+  except (FileNotFoundError, OSError, KeyError, ValueError):
+    return None
+
+
+def _notification_line_value(turn: dict, key: str) -> str:
+  prefix = f"{key}:"
+  for line in str(turn.get("input_text") or "").splitlines():
+    if line.startswith(prefix):
+      return line[len(prefix):].strip()
+  return ""
+
+
+def _system_run_subject(task_kind: str, task: dict | None) -> str:
+  normalized = task_kind.strip().lower()
+  name = str(
+      (task or {}).get("config_name") or (task or {}).get("agent_id") or ""
+  ).strip()
+  if normalized in {"agent_run", "run_agent", "system_agent_run"}:
+    return f"Agent {name}" if name else "Agent run"
+  if normalized == "command":
+    return "Background command"
+  return "Background run"
+
+
+def _system_run_status_label(status: str) -> str:
+  normalized = status.strip().lower()
+  if normalized in {"succeeded", "completed", "done"}:
+    return "completed"
+  if normalized == "failed":
+    return "failed"
+  if normalized in {"cancelled", "canceled"}:
+    return "cancelled"
+  return "finished"
+
+
 def _present_turn(
     turn: dict,
     attachments: list[dict] | None = None,
@@ -104,6 +196,7 @@ def _present_turn(
   if turn["total_token_count"] == 0:
     turn["total_token_count"] = input_tokens + output_tokens
   turn["active_seconds"] = _active_seconds(turn, waiting_seconds)
+  turn["system_run_label"] = _system_run_label(turn)
   turn["attachments"] = [attachment_summary(row) for row in attachments or []]
   return turn
 

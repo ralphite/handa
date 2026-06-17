@@ -604,6 +604,8 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       turnId: invocation.id,
       createdAt: assistantCreatedAtFromInvocation(invocation),
       invocationId: invocation.id,
+      triggerKind: invocation.trigger_kind,
+      systemRunLabel: invocation.system_run_label ?? undefined,
       elapsed: invocationElapsed,
       activeSeconds: invocationActive,
       status: invocationStatus,
@@ -1389,6 +1391,8 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
           turnId: invocation.id,
           createdAt: assistantCreatedAtFromInvocation(invocation),
           invocationId: invocation.id,
+          triggerKind: invocation.trigger_kind,
+          systemRunLabel: invocation.system_run_label ?? undefined,
           elapsed: elapsedText,
           activeSeconds,
           status,
@@ -1494,6 +1498,8 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       assistant.activeSeconds = invocationActiveSeconds(invocation)
       assistant.elapsed = formatWorkSeconds(assistant.activeSeconds)
       assistant.status = nextStatus
+      assistant.triggerKind = invocation.trigger_kind
+      assistant.systemRunLabel = invocation.system_run_label ?? undefined
       assistant.tokenUsage = tokenUsageFromInvocation(invocation)
       if (invocation.final_text) {
         if (!assistant.body) assistant.body = invocation.final_text

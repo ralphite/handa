@@ -459,6 +459,26 @@ function detailTokenUsageFor(message: AgentMessage) {
   return message.tokenUsage
 }
 
+function runDividerLabelFor(message: AgentMessage) {
+  if (message.triggerKind !== 'task_notification') return undefined
+  const label = (message.systemRunLabel ?? '').trim()
+  if (label) return label
+  if (message.status === 'failed') return 'Background run failed'
+  if (message.status === 'cancelled') return 'Background run cancelled'
+  return 'Background run completed'
+}
+
+function isTaskNotificationMessage(message: AgentMessage) {
+  return message.role === 'assistant' && message.triggerKind === 'task_notification'
+}
+
+function messageArticleClass(message: AgentMessage) {
+  return [
+    message.role === 'user' ? 'justify-end' : 'justify-start w-full',
+    isTaskNotificationMessage(message) ? '-mt-3' : '',
+  ]
+}
+
 function isMessageWorking(message: AgentMessage) {
   if (!shouldShowAgentDetails(message)) return false
   const status = detailStatusFor(message)
@@ -786,7 +806,7 @@ function cancelUserInput(payload: { requestId: string; turnId: string }) {
             v-for="message in visibleMessages"
             :key="message.id"
             class="flex"
-            :class="message.role === 'user' ? 'justify-end' : 'justify-start w-full'"
+            :class="messageArticleClass(message)"
             @mouseenter="showMessageActions(message)"
             @mouseleave="clearHoveredMessage(message.id)"
             @click="showMessageActions(message)"
@@ -898,6 +918,7 @@ function cancelUserInput(payload: { requestId: string; turnId: string }) {
                     :events="detailEventsFor(message)"
                     :timeline-items="timelineItemsFor(message)"
                     :markdown-is-dark="effectiveMarkdownIsDark"
+                    :run-divider-label="runDividerLabelFor(message)"
                     :show-live-summary="false"
                   />
                   <MarkdownRender

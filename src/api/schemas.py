@@ -228,6 +228,7 @@ class TurnSummary(BaseModel):
   final_text: str | None = None
   error_type: str | None = None
   error_message: str | None = None
+  system_run_label: str | None = None
   attachments: list[AttachmentSummary] = Field(default_factory=list)
 
 

@@ -1879,6 +1879,8 @@ def test_background_task_manager_delivers_subagent_completion_notification(
   assert invocations[-1]["trigger_kind"] == "task_notification"
   assert invocations[-1]["model_config_id"] == "gemini-3.5-flash"
   assert "Child result." in invocations[-1]["input_text"]
+  presented = client.get(f"/api/turns/{invocations[-1]['id']}").json()
+  assert presented["system_run_label"] == "Agent orca completed"
 
   repeated = asyncio.run(manager.process_once())
   assert repeated["created"] == 0

@@ -15,12 +15,16 @@ const props = defineProps<{
   events?: InvocationDetailEvent[]
   timelineItems?: InvocationTimelineItem[]
   markdownIsDark?: boolean
+  runDividerLabel?: string
   // When false, the live "Working for…" footer is omitted so the host can
   // render it below the message body/form instead. Done-state header always shows.
   showLiveSummary?: boolean
 }>()
 
 const showSummary = computed(() => !isLive.value || props.showLiveSummary !== false)
+const runDividerLabel = computed(() => (props.runDividerLabel ?? '').trim())
+const showRunDivider = computed(() => !isLive.value && showSummary.value)
+const hasRunDividerLabel = computed(() => Boolean(runDividerLabel.value))
 
 const summaryPrefix = computed(() => {
   if (props.status === 'cancelled') {
@@ -62,16 +66,25 @@ watch(
 
 <template>
   <div class="mb-2 flex flex-col">
+    <div
+      v-if="showRunDivider"
+      class="run-summary-divider"
+      :class="hasRunDividerLabel ? 'run-summary-divider--labeled' : 'run-summary-divider--plain'"
+      data-testid="run-summary-divider"
+    >
+      <span v-if="hasRunDividerLabel" class="run-summary-divider__label">{{ runDividerLabel }}</span>
+    </div>
     <component
       v-if="showSummary"
       :is="isExpandable ? 'button' : 'div'"
       :type="isExpandable ? 'button' : undefined"
-      class="select-none text-[13px] font-medium text-[color:var(--text-muted)] outline-none"
+      class="agent-summary-row select-none text-[13px] font-medium text-[color:var(--text-muted)] outline-none"
       :class="[
         isLive
           ? ['order-2 inline-flex items-center gap-1.5', hasTimelineItems ? 'mt-3' : '']
           : [
-              'order-1 flex w-full items-center gap-[9px] border-b border-[color:var(--border-muted)] pb-2 text-left',
+              'order-1 flex w-full items-center gap-[9px] text-left',
+              'pb-0.5',
               isExpandable
                 ? 'cursor-pointer focus-visible:text-[color:var(--text-secondary)]'
                 : '',
@@ -109,11 +122,53 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
+.agent-summary-row {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .elapsed-summary--stable {
   min-width: 13ch;
 }
 
 .elapsed-summary__chevron {
   flex: 0 0 auto;
+}
+
+.run-summary-divider {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.run-summary-divider--plain {
+  border-top: 1px solid var(--border-muted);
+  height: 0;
+}
+
+.run-summary-divider--labeled {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: -2px;
+}
+
+.run-summary-divider--labeled::before,
+.run-summary-divider--labeled::after {
+  border-top: 1px solid var(--border-muted);
+  content: "";
+  flex: 1 1 0;
+  min-width: 24px;
+}
+
+.run-summary-divider__label {
+  min-width: 0;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

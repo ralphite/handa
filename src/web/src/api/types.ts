@@ -54,6 +54,7 @@ export interface BackendTurn {
   final_text?: string | null
   error_type?: string | null
   error_message?: string | null
+  system_run_label?: string | null
   attachments?: BackendTurnAttachment[]
 }
 

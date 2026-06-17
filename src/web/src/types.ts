@@ -52,6 +52,8 @@ export interface AgentMessage {
   turnId?: string
   meta?: string
   invocationId?: string
+  triggerKind?: string
+  systemRunLabel?: string
   elapsed?: string
   /** Agent working time in seconds, excluding time paused on user input. */
   activeSeconds?: number
