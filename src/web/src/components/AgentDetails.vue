@@ -23,8 +23,10 @@ const props = defineProps<{
 
 const showSummary = computed(() => !isLive.value || props.showLiveSummary !== false)
 const runDividerLabel = computed(() => (props.runDividerLabel ?? '').trim())
-const showRunDivider = computed(() => !isLive.value && showSummary.value)
 const hasRunDividerLabel = computed(() => Boolean(runDividerLabel.value))
+// Only labeled dividers (e.g. background/task-notification runs) get a divider.
+// User-message-triggered turns have no label, so they render no divider line.
+const showRunDivider = computed(() => !isLive.value && showSummary.value && hasRunDividerLabel.value)
 
 const summaryPrefix = computed(() => {
   if (props.status === 'cancelled') {
@@ -65,14 +67,13 @@ watch(
 </script>
 
 <template>
-  <div class="mb-2 flex flex-col">
+  <div class="flex flex-col">
     <div
       v-if="showRunDivider"
-      class="run-summary-divider"
-      :class="hasRunDividerLabel ? 'run-summary-divider--labeled' : 'run-summary-divider--plain'"
+      class="run-summary-divider run-summary-divider--labeled"
       data-testid="run-summary-divider"
     >
-      <span v-if="hasRunDividerLabel" class="run-summary-divider__label">{{ runDividerLabel }}</span>
+      <span class="run-summary-divider__label">{{ runDividerLabel }}</span>
     </div>
     <component
       v-if="showSummary"
@@ -142,11 +143,6 @@ watch(
   font-weight: 500;
   line-height: 1.4;
   margin-bottom: 6px;
-}
-
-.run-summary-divider--plain {
-  border-top: 1px solid var(--border-muted);
-  height: 0;
 }
 
 .run-summary-divider--labeled {
