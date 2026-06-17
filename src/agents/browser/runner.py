@@ -15,7 +15,6 @@ from ..orca.tools import build_toolset
 
 
 CONFIG = load_agent_config_from_path(Path(__file__).with_name("browser.agent.json"))
-MAX_TOOL_ROUNDS = 24
 DEFAULT_MAX_OUTPUT_TOKENS = 8192
 HISTORY_STATE_KEY = "handa:browser_history"
 PENDING_ROUNDS_STATE_KEY = "handa:browser_pending_rounds"
@@ -56,7 +55,6 @@ async def run(
       history_state_key=HISTORY_STATE_KEY,
       pending_rounds_state_key=PENDING_ROUNDS_STATE_KEY,
       history_boundary_event_kind=HISTORY_BOUNDARY_EVENT_KIND,
-      max_tool_rounds=MAX_TOOL_ROUNDS,
       default_max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
   )
 

@@ -64,7 +64,6 @@ async def run_native_agent(
     history_state_key: str,
     pending_rounds_state_key: str,
     history_boundary_event_kind: str,
-    max_tool_rounds: int = 24,
     default_max_output_tokens: int = 8192,
 ) -> RunOutcome:
   root = _require_project_root(project_root, display_name=display_name)
@@ -159,13 +158,11 @@ async def run_native_agent(
     )
 
   while True:
-    tools_enabled = rounds < max_tool_rounds
     model_config = base_config.model_copy(deep=True)
-    if tools_enabled:
-      model_config.tools = [genai_tool]
-      model_config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
-          disable=True
-      )
+    model_config.tools = [genai_tool]
+    model_config.automatic_function_calling = types.AutomaticFunctionCallingConfig(
+        disable=True
+    )
     response = await generate_model_response(
         client=client,
         model=runtime_model_config.model,
@@ -176,47 +173,6 @@ async def run_native_agent(
     calls = _function_calls(content)
     text = _content_text(content)
     usage_metadata = _usage_payload(response)
-    if not tools_enabled and calls:
-      final_text = _tool_round_limit_text(rounds)
-      history.append(types.Content(role="model", parts=[types.Part(text=final_text)]))
-      _save_history(
-          session_service,
-          resolved_session_id,
-          history,
-          history_state_key=history_state_key,
-          pending_rounds_state_key=pending_rounds_state_key,
-          pending_rounds=None,
-      )
-      await emit_event(
-          _event(
-              f"{event_prefix}.tool_round_limit",
-              f"{display_name} stopped after tool round limit",
-              {
-                  "max_tool_rounds": max_tool_rounds,
-                  "rounds": rounds,
-                  "requested_tools": [
-                      str(call.name or "") for call in calls if call.name
-                  ],
-              },
-              event_id_prefix=event_id_prefix,
-          )
-      )
-      await emit_event(
-          _event(
-              "agent_text",
-              f"{display_name} response",
-              {"text": final_text, "final": True, "model": runtime_model_config.model},
-              event_id_prefix=event_id_prefix,
-          )
-      )
-      await _emit_history_boundary(
-          emit_event,
-          len(history),
-          event_id_prefix=event_id_prefix,
-          history_boundary_event_kind=history_boundary_event_kind,
-      )
-      return RunOutcome(final_text=final_text)
-
     history.append(content)
     _save_history(
         session_service,
@@ -556,16 +512,6 @@ async def _emit_history_boundary(
           event_id_prefix=event_id_prefix,
       )
   )
-
-
-def _tool_round_limit_text(rounds: int) -> str:
-  round_label = "tool round" if rounds == 1 else "tool rounds"
-  return (
-      f"Stopped after {rounds} {round_label} without a final answer. "
-      "The model kept requesting tools after Handa's tool budget was exhausted. "
-      "Please narrow the task or continue with a more specific instruction."
-  )
-
 
 def _require_project_root(
     project_root: str | Path | None,

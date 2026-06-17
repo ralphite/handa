@@ -190,18 +190,18 @@ def test_orca_reports_failed_tool_without_crashing(tmp_path, monkeypatch):
   asyncio.run(run_test())
 
 
-def test_orca_stops_when_tool_round_limit_is_exhausted(tmp_path, monkeypatch):
+def test_orca_continues_past_twenty_four_tool_rounds(tmp_path, monkeypatch):
   async def run_test():
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    monkeypatch.setattr(orca, "MAX_TOOL_ROUNDS", 1)
 
     scripted = [
-        _function_call("files_read", {"path": "first.md"}),
-        _function_call("files_read", {"path": "second.md"}),
+        _function_call("files_read", {"path": f"missing-{index}.md"})
+        for index in range(25)
     ]
+    scripted.append(_text("Finished after many tool rounds."))
     calls: list[dict] = []
 
     async def fake_generate(*, client, model, contents, config):
@@ -216,19 +216,18 @@ def test_orca_stops_when_tool_round_limit_is_exhausted(tmp_path, monkeypatch):
       events.append(event)
 
     outcome = await run(
-        prompt="Keep reading files.",
+        prompt="Keep reading files until you can answer.",
         project_root=str(project),
-        session_id="session-orca-tool-round-limit",
+        session_id="session-orca-many-tool-rounds",
         user_id="user",
         emit_event=emit_event,
         model_config_id="gemini-3.5-flash",
     )
 
-    assert "Stopped after 1 tool round" in outcome.final_text
-    assert len(calls) == 2
-    assert calls[0]["config"].tools
-    assert not calls[1]["config"].tools
-    assert any(event["kind"] == "orca.tool_round_limit" for event in events)
+    assert outcome.final_text == "Finished after many tool rounds."
+    assert len(calls) == 26
+    assert all(call["config"].tools for call in calls)
+    assert not any(event["kind"] == "orca.tool_round_limit" for event in events)
     assert events[-2]["kind"] == "agent_text"
     assert events[-1]["kind"] == "orca.history_boundary"
 

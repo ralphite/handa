@@ -12,7 +12,6 @@ from .orca.tools import build_session_context
 from .orca.tools import build_toolset
 
 
-MAX_TOOL_ROUNDS = 24
 DEFAULT_MAX_OUTPUT_TOKENS = 8192
 HISTORY_STATE_KEY = "handa:native_config_history"
 PENDING_ROUNDS_STATE_KEY = "handa:native_config_pending_rounds"
@@ -54,7 +53,6 @@ async def run_config_agent(
       history_state_key=HISTORY_STATE_KEY,
       pending_rounds_state_key=PENDING_ROUNDS_STATE_KEY,
       history_boundary_event_kind=HISTORY_BOUNDARY_EVENT_KIND,
-      max_tool_rounds=MAX_TOOL_ROUNDS,
       default_max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
   )
 
