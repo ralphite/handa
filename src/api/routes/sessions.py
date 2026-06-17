@@ -10,6 +10,10 @@ from fastapi import Request
 from ...contract.product import DEFAULT_WEB_AGENT_ID
 from ...contract.product import get_agent_definition
 from ...contract.services import APP_NAME
+from ...contract.goals import GOAL_STATE_KEY
+from ...contract.goals import active_goal_from_state
+from ...contract.goals import cleared_goal_state
+from ...contract.goals import goal_state_for_text
 from ...contract.task_store import cancel_descendant_runs
 from ...contract.task_store import cancel_task
 from ...contract.storage import create_session_id
@@ -23,6 +27,8 @@ from ..schemas import SessionCreateRequest
 from ..schemas import SessionDeleteSummary
 from ..schemas import SessionForkRequest
 from ..schemas import SessionDetail
+from ..schemas import SessionGoal
+from ..schemas import SessionGoalUpdateRequest
 from ..schemas import SessionRenameRequest
 from ..schemas import SessionStarSummary
 from ..schemas import SessionStarUpdateRequest
@@ -73,6 +79,50 @@ async def _session_automated_task_id(ctx: WebApiContext, session_id: str) -> str
       session_id=session_id,
   )
   return _automated_task_id_from_state(session.state) if session is not None else None
+
+
+def _present_goal(state: dict[str, Any] | None) -> dict[str, Any]:
+  goal = active_goal_from_state(state)
+  if goal is not None:
+    return goal
+  raw = (state or {}).get(GOAL_STATE_KEY)
+  if isinstance(raw, dict):
+    status = str(raw.get("status") or "cleared")
+    return {
+        "goal_id": raw.get("goal_id"),
+        "text": "" if status == "cleared" else str(raw.get("text") or ""),
+        "status": status,
+        "created_turn_id": raw.get("created_turn_id"),
+        "created_at": raw.get("created_at"),
+        "updated_at": raw.get("updated_at"),
+        "max_attempts": raw.get("max_attempts"),
+        "reason": raw.get("reason"),
+    }
+  return {
+      "goal_id": None,
+      "text": "",
+      "status": "cleared",
+      "created_turn_id": None,
+      "created_at": None,
+      "updated_at": None,
+      "max_attempts": None,
+      "reason": None,
+  }
+
+
+async def _load_session_for_goal(ctx: WebApiContext, session_id: str):
+  if ctx.db.get_session_meta(session_id, include_deleted=True) is None:
+    raise HTTPException(status_code=404, detail="Session not found")
+  if ctx.db.is_session_deleted(session_id):
+    raise HTTPException(status_code=404, detail="Session not found")
+  session = await ctx.services.session_service.get_session(
+      app_name=APP_NAME,
+      user_id=ctx.settings.user_id,
+      session_id=session_id,
+  )
+  if session is None:
+    raise HTTPException(status_code=404, detail="Session not found")
+  return session
 
 
 @router.get("", response_model=list[SessionSummary])
@@ -144,6 +194,46 @@ async def create_session(
       agent_runtime=definition.runtime,
   )
   return present_session(meta, status="idle", updated_at=_updated_at(stored_session))
+
+
+@router.get("/{session_id}/goal", response_model=SessionGoal)
+async def get_session_goal(session_id: str, request: Request) -> dict[str, Any]:
+  ctx = get_context(request)
+  session = await _load_session_for_goal(ctx, session_id)
+  return _present_goal(session.state)
+
+
+@router.put("/{session_id}/goal", response_model=SessionGoal)
+async def update_session_goal(
+    session_id: str,
+    payload: SessionGoalUpdateRequest,
+    request: Request,
+) -> dict[str, Any]:
+  ctx = get_context(request)
+  session = await _load_session_for_goal(ctx, session_id)
+  state = session.state or {}
+  try:
+    goal = goal_state_for_text(payload.text, previous=state.get(GOAL_STATE_KEY))
+  except ValueError as exc:
+    raise HTTPException(status_code=422, detail=str(exc)) from exc
+  updated = ctx.services.session_service.merge_state_sync(
+      session_id,
+      {GOAL_STATE_KEY: goal},
+  )
+  return _present_goal(updated)
+
+
+@router.delete("/{session_id}/goal", response_model=SessionGoal)
+async def clear_session_goal(session_id: str, request: Request) -> dict[str, Any]:
+  ctx = get_context(request)
+  session = await _load_session_for_goal(ctx, session_id)
+  state = session.state or {}
+  cleared = cleared_goal_state(previous=state.get(GOAL_STATE_KEY))
+  updated = ctx.services.session_service.merge_state_sync(
+      session_id,
+      {GOAL_STATE_KEY: cleared},
+  )
+  return _present_goal(updated)
 
 
 @router.patch("/{session_id}", response_model=SessionSummary)

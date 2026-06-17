@@ -48,6 +48,7 @@ describe('filterSlashCommands', () => {
 
   it('matches by alias', () => {
     expect(filterSlashCommands('models').map((command) => command.id)).toContain('model')
+    expect(filterSlashCommands('objective').map((command) => command.id)).toContain('goal')
   })
 
   it('returns nothing for an unknown token', () => {

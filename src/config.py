@@ -36,6 +36,7 @@ class AgentConfig(BaseModel):
   subagents: list[str] = Field(default_factory=list)
   instruction_sections: list[str] = Field(default_factory=list)
   custom_instruction: str | None = None
+  hooks: list[dict] = Field(default_factory=list)
 
   @model_validator(mode="before")
   @classmethod

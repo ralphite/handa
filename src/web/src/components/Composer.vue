@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Bot, Box, Clock, FileText, Loader2, Mic, Paperclip, Pencil, Sparkles, Square, Undo2, X } from '@lucide/vue'
+import { ArrowRight, Bot, Box, Clock, FileText, Loader2, Mic, Paperclip, Pencil, Sparkles, Square, Target, Undo2, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useDictation } from '../composables/useDictation'
 import { useOptimizePrompt } from '../composables/useOptimizePrompt'
@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<{
   modelConfigs: BackendModelConfigOption[]
   contextUsage?: ContextUsageSummary
   pendingMessages?: PendingUserMessage[]
+  goalCommandEnabled?: boolean
   sendError?: string
   draftText?: string
   /** When set, the primary action renders as a labelled pill (e.g. "Create") instead of the → arrow. */
@@ -51,6 +52,7 @@ const props = withDefaults(defineProps<{
   // default the composer would never autofocus. Default to `true` and let callers
   // (e.g. AutomatedTaskEditor) opt out with `:auto-focus="false"`.
   autoFocus: true,
+  goalCommandEnabled: true,
 })
 
 const emit = defineEmits<{
@@ -84,7 +86,10 @@ interface ModelOptionDisplay {
 const MODEL_TIER_SUFFIXES = new Set(['Low', 'Medium', 'High', 'Small'])
 const GEMINI_LABEL_PREFIX = /^Gemini\s+/i
 const COMPOSER_TEXTAREA_MAX_HEIGHT = 240
-const SLASH_COMMAND_ICONS: Record<SlashCommandKind, Component> = { model: Box }
+const SLASH_COMMAND_ICONS: Record<SlashCommandKind, Component> = {
+  model: Box,
+  goal: Target,
+}
 
 const draft = ref(props.draftText ?? '')
 const attachments = ref<LocalAttachment[]>([])
@@ -92,6 +97,7 @@ const editExistingAttachments = ref<MessageAttachment[]>([])
 // Server-side attachments prefilled into a fresh (non-edit) message, e.g. when
 // forking a message that had attachments. Cloned onto the new turn on send.
 const prefilledAttachments = ref<MessageAttachment[]>([])
+const draftGoal = ref(false)
 const editSubmitting = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -108,7 +114,7 @@ const slashCommandMatches = ref<SlashCommand[]>([])
 // token and preserves any surrounding draft text.
 const slashTokenRange = ref<{ start: number; end: number } | null>(null)
 const sendAfterDictation = ref(false)
-const lastSubmitted = ref<{ prompt: string; files: File[]; existingAttachments: MessageAttachment[] } | null>(null)
+const lastSubmitted = ref<{ prompt: string; files: File[]; existingAttachments: MessageAttachment[]; goal: boolean } | null>(null)
 const stashedDraftBeforeEdit = ref<string | null>(null)
 let stashedAttachmentsBeforeEdit: LocalAttachment[] | null = null
 let textareaResizeObserver: ResizeObserver | null = null
@@ -278,6 +284,13 @@ watch(
 )
 
 watch(
+  () => props.sessionId,
+  () => {
+    draftGoal.value = false
+  },
+)
+
+watch(
   () => props.draftAttachments,
   (next) => {
     if (isEditing.value) return
@@ -304,6 +317,7 @@ watch(
     if (isEditing.value) return
     if (!message || !lastSubmitted.value) return
     draft.value = lastSubmitted.value.prompt
+    draftGoal.value = lastSubmitted.value.goal
     clearAttachments()
     addFiles(lastSubmitted.value.files)
     prefilledAttachments.value = [...lastSubmitted.value.existingAttachments]
@@ -495,6 +509,10 @@ const contextUsageDisplay = computed(() => {
   return usage
 })
 
+const showGoalChip = computed(() => (
+  props.goalCommandEnabled && draftGoal.value && !isEditing.value
+))
+
 function openContextDialog() {
   if (!contextUsageDisplay.value) return
   contextDialogOpen.value = true
@@ -582,9 +600,11 @@ function submit() {
   const existingAttachments = [...prefilledAttachments.value]
   const existingAttachmentIds = existingAttachments.map((item) => item.id)
   if (!prompt && files.length === 0 && existingAttachmentIds.length === 0) return
-  lastSubmitted.value = { prompt, files, existingAttachments }
-  emit('send', { prompt, files, existingAttachmentIds })
+  const goal = draftGoal.value
+  lastSubmitted.value = { prompt, files, existingAttachments, goal }
+  emit('send', { prompt, files, existingAttachmentIds, goal })
   draft.value = ''
+  draftGoal.value = false
   clearAttachments()
   prefilledAttachments.value = []
   emit('updateDraftAttachments', [])
@@ -699,7 +719,9 @@ function refreshSlashMenu() {
     closeSlashMenu()
     return
   }
-  const matches = filterSlashCommands(token.query)
+  const matches = filterSlashCommands(token.query).filter((command) => (
+    props.goalCommandEnabled || command.kind !== 'goal'
+  ))
   if (matches.length === 0) {
     closeSlashMenu()
     return
@@ -710,12 +732,16 @@ function refreshSlashMenu() {
   if (slashHighlight.value >= matches.length) slashHighlight.value = 0
 }
 
-// Excise the active `/token` while keeping any text around it.
-function removeActiveSlashToken() {
+// Replace the active `/token` while keeping any text around it.
+function replaceActiveSlashToken(replacement = '') {
   const range = slashTokenRange.value
   if (!range) return
   const text = draft.value
-  draft.value = text.slice(0, range.start) + text.slice(range.end)
+  draft.value = text.slice(0, range.start) + replacement + text.slice(range.end)
+  nextTick(() => {
+    const caret = range.start + replacement.length
+    textareaRef.value?.setSelectionRange(caret, caret)
+  })
   slashTokenRange.value = null
 }
 
@@ -723,10 +749,15 @@ function runSlashCommand(command: SlashCommand) {
   if (command.kind === 'model') {
     // Consume the `/model` token (preserving surrounding text) and hand off to
     // the model picker level.
-    removeActiveSlashToken()
+    replaceActiveSlashToken()
     slashLevel.value = 'model'
     const currentIndex = modelDropdownOptions.value.findIndex((option) => option.id === props.modelConfigId)
     slashHighlight.value = currentIndex >= 0 ? currentIndex : 0
+  } else if (command.kind === 'goal') {
+    replaceActiveSlashToken()
+    draftGoal.value = true
+    closeSlashMenu()
+    focusInput()
   }
 }
 
@@ -842,7 +873,8 @@ defineExpose({
     </div>
 
     <div
-      class="relative w-full rounded-xl border border-[color:var(--border-subtle)] bg-[var(--surface)] p-3 shadow-sm shadow-[var(--shadow-color)]"
+      class="relative w-full rounded-xl border border-[color:var(--border-subtle)] bg-[var(--surface)] px-3 pb-3 shadow-sm shadow-[var(--shadow-color)]"
+      :class="showGoalChip ? 'pt-9' : 'pt-3'"
       data-testid="composer"
       :data-mode="isEditing ? 'edit' : 'send'"
     >
@@ -854,9 +886,26 @@ defineExpose({
       @select="onSlashMenuSelect"
       @hover="slashHighlight = $event"
     />
+    <button
+      v-if="showGoalChip"
+      class="group absolute left-3 top-2 z-10 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)] focus:outline-none focus-visible:bg-[var(--surface-hover)] focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
+      type="button"
+      aria-label="Remove goal label"
+      data-testid="composer-goal"
+      @click="draftGoal = false"
+    >
+      <Target :size="14" class="shrink-0" />
+      <span>Goal</span>
+      <X
+        :size="12"
+        class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden="true"
+      />
+    </button>
     <div
       v-if="pendingMessages?.length"
-      class="-mx-3 -mt-3 mb-2 flex flex-col border-b border-[color:var(--border-muted)] px-3 py-1.5"
+      class="-mx-3 mb-2 flex flex-col border-b border-[color:var(--border-muted)] px-3 py-1.5"
+      :class="showGoalChip ? '' : '-mt-3'"
       data-testid="composer-pending-messages"
     >
       <div

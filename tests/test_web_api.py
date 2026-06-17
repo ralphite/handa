@@ -76,6 +76,73 @@ def test_web_api_session_creation_defaults_to_orca(tmp_path, monkeypatch):
   assert created["agent_runtime"] == "native"
 
 
+def test_web_api_session_goal_roundtrip_and_detail(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+
+  app = create_app()
+  client = TestClient(app)
+
+  project = client.post("/api/projects", json={"root_path": str(project)}).json()
+  session = client.post("/api/sessions", json={"project_id": project["id"]}).json()
+
+  empty = client.get(f"/api/sessions/{session['id']}/goal").json()
+  updated = client.put(
+      f"/api/sessions/{session['id']}/goal",
+      json={"text": "Finish hook support."},
+  ).json()
+  detail = client.get(f"/api/sessions/{session['id']}/detail").json()
+  cleared = client.delete(f"/api/sessions/{session['id']}/goal").json()
+
+  assert empty["status"] == "cleared"
+  assert updated["status"] == "active"
+  assert updated["text"] == "Finish hook support."
+  assert detail["goal"]["text"] == "Finish hook support."
+  assert cleared["status"] == "cleared"
+  assert cleared["text"] == ""
+
+
+def test_web_api_goal_turn_marks_session_goal_and_keeps_normal_message(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  project_path = tmp_path / "project"
+  project_path.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+
+  def fake_execute_turn(ctx, invocation_id):
+    ctx.db.update_turn(invocation_id, status="completed", final_text="done")
+
+  monkeypatch.setattr(
+      "src.api.turn_queue.spawn_turn_worker",
+      fake_execute_turn,
+  )
+
+  app = create_app()
+  client = TestClient(app)
+  project = client.post("/api/projects", json={"root_path": str(project_path)}).json()
+
+  created = client.post(
+      "/api/turns",
+      data={
+          "input_text": "Every answer should start with GOAL-ANCHOR.",
+          "project_id": project["id"],
+          "agent_id": "orca",
+          "goal": "true",
+      },
+  ).json()
+  session = app.state.web_context.services.session_service._read_session(
+      created["session_id"]
+  )
+  detail = client.get(f"/api/sessions/{created['session_id']}/detail").json()
+
+  assert created["input_text"] == "Every answer should start with GOAL-ANCHOR."
+  assert created["trigger_kind"] == "user_message"
+  assert session.state["handa:goal"]["text"] == "Every answer should start with GOAL-ANCHOR."
+  assert session.state["handa:goal"]["status"] == "active"
+  assert detail["goal"]["text"] == "Every answer should start with GOAL-ANCHOR."
+
+
 def test_web_api_session_list_hides_missing_storage_sessions(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   project = tmp_path / "project"

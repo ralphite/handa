@@ -15,3 +15,5 @@ class RunOutcome:
 
   final_text: str = ""
   pending_user_input: dict[str, Any] | None = None
+  goal_status: str | None = None
+  goal_verdict: dict[str, Any] | None = None

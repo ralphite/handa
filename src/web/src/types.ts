@@ -44,6 +44,17 @@ export interface PendingUserMessage {
   attachments?: MessageAttachment[]
 }
 
+export interface SessionGoal {
+  goalId?: string | null
+  text: string
+  status: string
+  createdTurnId?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  maxAttempts?: number | null
+  reason?: string | null
+}
+
 export interface AgentMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -109,6 +120,8 @@ export interface SendPromptPayload {
   files: File[]
   /** Ids of existing server-side attachments to clone onto the new turn (e.g. when forking). */
   existingAttachmentIds: string[]
+  /** Marks this user message as the session goal while still creating a normal turn. */
+  goal?: boolean
 }
 
 export interface InvocationTokenUsage {
@@ -295,6 +308,7 @@ export interface AgentSession {
   backgroundRuns?: AgentBackgroundRun[]
   progressItems?: AgentProgressItem[]
   browserEnvironment?: AgentBrowserEnvironment | null
+  goal?: SessionGoal | null
   readOnly?: boolean
   contextUsageBreakdown?: ContextUsageBreakdownItem[]
   elapsed: string

@@ -8,6 +8,7 @@ import {
   forkSession,
   getTurn,
   getSessionDetail,
+  clearSessionGoal as clearSessionGoalRequest,
   launchProjectApp,
   listAgents,
   listArtifacts,
@@ -26,6 +27,7 @@ import {
   submitTurnUserInput,
   terminateTurn,
   terminateSessionTask,
+  updateSessionGoal as updateSessionGoalRequest,
   updateSessionArchive,
   updateSessionStar,
   updateSessionUnread,
@@ -36,6 +38,7 @@ import type {
   BackendBrowserEnvironment,
   BackendBrowserInteraction,
   BackendContextUsageBreakdownItem,
+  BackendSessionGoal,
   BackendTurnAttachment,
   BackendBackgroundRun,
   BackendProgressItem,
@@ -55,6 +58,7 @@ import type {
   Artifact,
   MessageAttachment,
   ProjectNavItem,
+  SessionGoal,
   InvocationDetailEvent,
   InvocationTimelineItem,
   InvocationTokenUsage,
@@ -160,6 +164,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     invocationSteps: [],
     progressItems: [],
     browserEnvironment: null,
+    goal: null,
     contextUsageBreakdown: [],
     artifacts: [],
     fileChanges: [],
@@ -445,7 +450,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   }
 
   async function sendPrompt(
-    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[] },
+    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[]; goal?: boolean },
     modelConfigId?: string,
   ) {
     const trimmed = payload.prompt.trim()
@@ -463,7 +468,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     try {
       const reuseSessionId = existing?.id
       await startInvocation(
-        { prompt: trimmed, files, existingAttachmentIds },
+        { prompt: trimmed, files, existingAttachmentIds, goal: payload.goal },
         projectId,
         existing?.agentId ?? DEFAULT_AGENT_ID,
         reuseSessionId,
@@ -476,7 +481,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   }
 
   async function sendNewChatPrompt(
-    payload: { prompt: string; files: File[] },
+    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[]; goal?: boolean },
     projectId: string,
     modelConfigId?: string,
     agentId = draftAgentId.value,
@@ -493,14 +498,47 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     draftProjectId.value = projectId
     setDraftAgent(agentId)
     try {
-      await startInvocation({ prompt: trimmed, files }, projectId, draftAgentId.value, undefined, modelConfigId)
+      await startInvocation(
+        {
+          prompt: trimmed,
+          files,
+          existingAttachmentIds: payload.existingAttachmentIds ?? [],
+          goal: payload.goal,
+        },
+        projectId,
+        draftAgentId.value,
+        undefined,
+        modelConfigId,
+      )
     } catch (exc) {
       sendError.value = errorMessageFromUnknown(exc)
     }
   }
 
+  async function setActiveSessionGoal(text: string) {
+    const session = activeSessionRecord.value
+    if (!session || session.readOnly) return
+    try {
+      const goal = await updateSessionGoalRequest(session.id, text)
+      session.goal = goalFromBackend(goal)
+    } catch (exc) {
+      notifyActionError(exc)
+    }
+  }
+
+  async function clearActiveSessionGoal() {
+    const session = activeSessionRecord.value
+    if (!session || session.readOnly) return
+    try {
+      const goal = await clearSessionGoalRequest(session.id)
+      session.goal = goalFromBackend(goal)
+    } catch (exc) {
+      notifyActionError(exc)
+    }
+  }
+
   async function startInvocation(
-    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[] },
+    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[]; goal?: boolean },
     projectId: string,
     agentId: string,
     reuseSessionId?: string,
@@ -515,14 +553,31 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       modelConfigId,
       payload.files,
       payload.existingAttachmentIds ?? [],
+      Boolean(payload.goal),
     )
     const project = backendProjects.value.find((item) => item.id === projectId)
     if (!project) return
     const existing = existingSession ?? sessions.value.find((item) => item.id === reuseSessionId)
     if (existing && reuseSessionId) {
       appendInvocationToSession(existing, invocation)
+      if (payload.goal && payload.prompt.trim()) {
+        existing.goal = {
+          text: payload.prompt.trim(),
+          status: 'active',
+          createdAt: null,
+          updatedAt: null,
+        }
+      }
     } else {
       const session = sessionFromInvocation(invocation, project, agentId)
+      if (payload.goal && payload.prompt.trim()) {
+        session.goal = {
+          text: payload.prompt.trim(),
+          status: 'active',
+          createdAt: null,
+          updatedAt: null,
+        }
+      }
       sessions.value = [session, ...sessions.value.filter((item) => item.id !== session.id)]
       backendProjects.value = [project, ...backendProjects.value.filter((item) => item.id !== project.id)]
       draftProjectId.value = ''
@@ -1235,6 +1290,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     session.progressItems = detail.progress_items.map(progressItemFromDetail)
     session.browserEnvironment = browserEnvironmentFromDetail(detail.browser_environment)
     session.contextUsageBreakdown = contextUsageBreakdownFromDetail(detail)
+    session.goal = goalFromBackend(detail.goal)
     session.readOnly = Boolean(detail.parent_session_id)
 
     if (detail.parent_session_id) {
@@ -1347,6 +1403,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       backgroundRuns: [],
       progressItems: [],
       browserEnvironment: null,
+      goal: null,
       contextUsageBreakdown: [],
       artifacts: [],
       fileChanges: [],
@@ -1408,6 +1465,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       backgroundRuns: [],
       progressItems: [],
       browserEnvironment: null,
+      goal: null,
       contextUsageBreakdown: [],
       artifacts: [],
       fileChanges: [],
@@ -1469,6 +1527,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       backgroundRuns: detail.background_runs.map(backgroundRunFromDetail),
       progressItems: detail.progress_items.map(progressItemFromDetail),
       browserEnvironment: browserEnvironmentFromDetail(detail.browser_environment),
+      goal: goalFromBackend(detail.goal),
       contextUsageBreakdown: contextUsageBreakdownFromDetail(detail),
       readOnly: Boolean(detail.parent_session_id),
       elapsed: sessionDetailElapsed(detail, status),
@@ -1689,12 +1748,14 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     sendNewChatPrompt,
     sendError,
     sendPrompt,
+    setActiveSessionGoal,
     setDraftAgent,
     sessions,
     syncSessionFromUrl,
     stopActiveInvocation,
     stopPolling,
     submitUserInput,
+    clearActiveSessionGoal,
     terminateBackgroundRun,
     toggleSessionStar,
     unarchiveSession,
@@ -2111,6 +2172,20 @@ function browserEnvironmentFromDetail(
     screenshotUrl: browser.screenshot_url ?? null,
     streamUrl: browser.stream_url ?? null,
     viewport: browser.viewport ?? null,
+  }
+}
+
+function goalFromBackend(goal: BackendSessionGoal | null | undefined): SessionGoal | null {
+  if (!goal || goal.status !== 'active' || !goal.text.trim()) return null
+  return {
+    goalId: goal.goal_id ?? null,
+    text: goal.text,
+    status: goal.status,
+    createdTurnId: goal.created_turn_id ?? null,
+    createdAt: goal.created_at ?? null,
+    updatedAt: goal.updated_at ?? null,
+    maxAttempts: goal.max_attempts ?? null,
+    reason: goal.reason ?? null,
   }
 }
 

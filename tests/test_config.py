@@ -21,6 +21,7 @@ def sample_config() -> AgentConfig:
       skills=["testing"],
       subagents=["self", "browser"],
       instruction_sections=["identity", "testing"],
+      hooks=[{"trigger": "pre_invocation", "command": "echo ok"}],
   )
 
 
@@ -40,12 +41,14 @@ def test_config_roundtrip(tmp_path, monkeypatch):
   assert loaded.skills == ["testing"]
   assert loaded.subagents == ["self", "browser"]
   assert loaded.instruction_sections == ["identity", "testing"]
+  assert loaded.hooks == [{"trigger": "pre_invocation", "command": "echo ok"}]
 
 
 def test_agent_config_subagents_default_empty():
   config = AgentConfig.model_validate_json('{"name":"no_subagents"}')
 
   assert config.subagents == []
+  assert config.hooks == []
 
 
 def test_agent_config_defaults_missing_description():

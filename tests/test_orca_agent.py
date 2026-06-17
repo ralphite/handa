@@ -86,6 +86,39 @@ def test_orca_runs_react_tool_loop(tmp_path, monkeypatch):
   asyncio.run(run_test())
 
 
+def test_orca_can_return_candidate_without_final_agent_text(tmp_path, monkeypatch):
+  async def run_test():
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    async def fake_generate(*, client, model, contents, config):
+      return _model_response(_text("Candidate answer."))
+
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
+    events = []
+
+    async def emit_event(event):
+      events.append(event)
+
+    outcome = await run(
+        prompt="Try to finish.",
+        project_root=str(project),
+        session_id="session-orca-candidate",
+        user_id="user",
+        emit_event=emit_event,
+        model_config_id="gemini-3.5-flash",
+        emit_final_agent_text=False,
+    )
+
+    assert outcome.final_text == "Candidate answer."
+    assert "agent_text" not in [event["kind"] for event in events]
+    assert events[-1]["kind"] == "orca.history_boundary"
+
+  asyncio.run(run_test())
+
+
 def test_orca_persists_history_across_turns(tmp_path, monkeypatch):
   async def run_test():
     project = tmp_path / "project"

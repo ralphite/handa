@@ -13,6 +13,10 @@ from .observability import setup_phoenix_tracing
 from .agent_runtime import DEFAULT_WEB_AGENT_ID
 from .agent_runtime import get_agent_definition
 from .agent_runtime import resolve_agent_id_for_runtime
+from .contract.goals import active_goal_from_state
+from .contract.goals import finished_goal_state
+from .contract.goals import GOAL_STATE_KEY
+from .contract.goals import GOAL_STATUS_CANCELLED
 from .run_manager import run_agent_invocation
 from .runner import create_handa_services
 from .runtime import append_task_event
@@ -86,6 +90,7 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
         project_root=task.get("project_root"),
         model_config_id=task.get("model_config_id"),
         resume_user_input=task.get("resume_user_input"),
+        hooks=list(task.get("hooks") or []),
     )
 
     task = load_task(turn_id, session_id=session_id)
@@ -128,6 +133,7 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
     return 0
   except asyncio.CancelledError:
     task = load_task(turn_id, session_id=session_id)
+    _cancel_active_goal(services, session_id)
     if not task.get("cancel_requested_at"):
       # Cancelled from inside the run rather than via terminate (which already
       # emits the step before signalling); record the step ourselves.
@@ -211,6 +217,23 @@ def _clear_active_turn_id(services, session_id: str, turn_id: str) -> None:
   services.session_service.merge_state_sync(
       session_id,
       {"handa:active_turn_id": None},
+  )
+
+
+def _cancel_active_goal(services, session_id: str) -> None:
+  state = services.session_service.read_state_sync(session_id)
+  goal = active_goal_from_state(state)
+  if goal is None:
+    return
+  services.session_service.merge_state_sync(
+      session_id,
+      {
+          GOAL_STATE_KEY: finished_goal_state(
+              goal,
+              status=GOAL_STATUS_CANCELLED,
+              reason="User stopped the run.",
+          )
+      },
   )
 
 

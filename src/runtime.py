@@ -17,6 +17,8 @@ import uuid
 from .agent_runtime import get_agent_definition
 from .config import AgentConfig
 from .config import resolve_agent_config_model_config_id
+from .contract.hooks import normalize_hooks
+from .contract.product import hooks_for_agent
 from .model_configs import validate_model_config_id
 from .storage.paths import resolve_storage_root
 from .storage.paths import session_dir
@@ -778,6 +780,7 @@ def _base_run_task(
       "log_path": str(task_log_file(task_id, session_id=session_id)),
       "result_path": str(task_dir(task_id, session_id=session_id) / "result.json"),
       "summary_artifact": None,
+      "hooks": [],
   }
 
 
@@ -918,6 +921,7 @@ def start_system_agent_run_task(
       "context": context or "",
       "save_parent_summary": False,
       "suppress_task_notification": bool(suppress_task_notification),
+      "hooks": normalize_hooks(normalized_config.get("hooks") or []),
   }
   save_task(task)
   append_task_event(
@@ -981,6 +985,7 @@ def start_run_agent_task(
       "prompt": prompt,
       "context": context or "",
       "depth": depth,
+      "hooks": hooks_for_agent(agent_id),
   }
   save_task(task)
   append_task_event(

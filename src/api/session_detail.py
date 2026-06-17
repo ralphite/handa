@@ -6,6 +6,7 @@ from typing import Any
 from typing import TYPE_CHECKING
 
 from ..contract.browser import read_browser_summary
+from ..contract.goals import active_goal_from_state
 from ..contract.product import DEFAULT_WEB_AGENT_ID
 from ..contract.product import PROGRESS_STATE_KEY
 from ..contract.product import normalize_progress_items
@@ -102,6 +103,7 @@ async def build_session_detail(
       "forked_from_turn_id": _fork_state(session, meta, "turn_id"),
       "forked_at": _fork_state(session, meta, "at"),
       "prompt": prompt,
+      "goal": active_goal_from_state(session.state),
       "input_token_count": usage.context_token_count,
       "output_token_count": usage.output_token_count,
       "total_token_count": usage.total_token_count,

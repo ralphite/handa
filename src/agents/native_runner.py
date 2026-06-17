@@ -17,6 +17,8 @@ from google import genai
 from google.genai import types
 
 from ..config import AgentConfig
+from ..contract.hooks import HookBlockedError
+from ..contract.hooks import run_hooks
 from ..config import load_agent_config_from_path
 from ..instructions import render_instruction
 from ..message_parts import build_message_parts
@@ -82,6 +84,7 @@ def make_native_agent_run(
       session_id: str | None = None,
       user_id: str | None = None,
       resume_user_input: dict[str, Any] | None = None,
+      emit_final_agent_text: bool = True,
   ) -> RunOutcome:
     return await run_native_agent(
         config=config,
@@ -97,6 +100,7 @@ def make_native_agent_run(
         session_id=session_id,
         user_id=user_id,
         resume_user_input=resume_user_input,
+        emit_final_agent_text=emit_final_agent_text,
         display_name=display_name,
         event_prefix=prefix,
         event_id_prefix=prefix,
@@ -126,6 +130,7 @@ async def run_native_agent(
     session_id: str | None = None,
     user_id: str | None = None,
     resume_user_input: dict[str, Any] | None = None,
+    emit_final_agent_text: bool = True,
     display_name: str,
     event_prefix: str,
     event_id_prefix: str,
@@ -198,6 +203,15 @@ async def run_native_agent(
         emit_event=emit_event,
         root=root,
         resume_user_input=response,
+        hooks=config.hooks,
+        hook_context_base=_hook_context_base(
+            resolved_session_id=resolved_session_id,
+            resolved_user_id=resolved_user_id,
+            project_root=root,
+            display_name=display_name,
+            event_prefix=event_prefix,
+            model_config_id=resolved_model_config_id,
+        ),
         event_prefix=event_prefix,
         event_id_prefix=event_id_prefix,
         call_id_prefix=call_id_prefix,
@@ -266,14 +280,15 @@ async def run_native_agent(
       )
     if not calls:
       final_text = text or f"({display_name} produced no text response)"
-      await emit_event(
-          _event(
-              "agent_text",
-              f"{display_name} response",
-              {"text": final_text, "final": True, "model": runtime_model_config.model},
-              event_id_prefix=event_id_prefix,
-          )
-      )
+      if emit_final_agent_text:
+        await emit_event(
+            _event(
+                "agent_text",
+                f"{display_name} response",
+                {"text": final_text, "final": True, "model": runtime_model_config.model},
+                event_id_prefix=event_id_prefix,
+            )
+        )
       await _emit_history_boundary(
           emit_event,
           len(history),
@@ -288,6 +303,15 @@ async def run_native_agent(
         emit_event=emit_event,
         root=root,
         resume_user_input=None,
+        hooks=config.hooks,
+        hook_context_base=_hook_context_base(
+            resolved_session_id=resolved_session_id,
+            resolved_user_id=resolved_user_id,
+            project_root=root,
+            display_name=display_name,
+            event_prefix=event_prefix,
+            model_config_id=resolved_model_config_id,
+        ),
         event_prefix=event_prefix,
         event_id_prefix=event_id_prefix,
         call_id_prefix=call_id_prefix,
@@ -340,6 +364,8 @@ async def _execute_tools(
     emit_event: AgentEventEmitter,
     root: Path,
     resume_user_input: dict[str, Any] | None,
+    hooks: list[dict[str, Any]],
+    hook_context_base: dict[str, Any],
     event_prefix: str,
     event_id_prefix: str,
     call_id_prefix: str,
@@ -393,7 +419,37 @@ async def _execute_tools(
               event_id_prefix=event_id_prefix,
           )
       )
-      result = await toolset.dispatch(name, args)
+      hook_context = {
+          **hook_context_base,
+          "trigger": "pre_tool",
+          "tool_name": name,
+          "tool_args": _jsonable(args),
+          "call_id": call_id,
+      }
+      blocked = await _pre_tool_block(
+          hooks,
+          context=hook_context,
+          root=root,
+          emit_event=emit_event,
+      )
+      if blocked is not None:
+        result = blocked
+      else:
+        result = await toolset.dispatch(name, args)
+      await _post_tool_hooks(
+          hooks,
+          context={
+              **hook_context_base,
+              "trigger": "post_tool",
+              "tool_name": name,
+              "tool_args": _jsonable(args),
+              "tool_result": _jsonable(result),
+              "call_id": call_id,
+              "status": "ok" if bool(result.get("ok")) else "failed",
+          },
+          root=root,
+          emit_event=emit_event,
+      )
       await emit_event(
           _event(
               f"{event_prefix}.tool_result",
@@ -411,6 +467,67 @@ async def _execute_tools(
           types.Part.from_function_response(name=name, response=result)
       )
   return _ExecutedTools(response_parts=response_parts)
+
+
+async def _pre_tool_block(
+    hooks: list[dict[str, Any]],
+    *,
+    context: dict[str, Any],
+    root: Path,
+    emit_event: AgentEventEmitter,
+) -> dict[str, Any] | None:
+  try:
+    await run_hooks(
+        hooks,
+        trigger="pre_tool",
+        context=context,
+        project_root=root,
+        emit_event=emit_event,
+    )
+    return None
+  except HookBlockedError as exc:
+    return _tool_error_payload(
+        str(context.get("tool_name") or ""),
+        str(exc) or f"pre_tool hook {exc.hook_id} blocked this tool call",
+    )
+
+
+async def _post_tool_hooks(
+    hooks: list[dict[str, Any]],
+    *,
+    context: dict[str, Any],
+    root: Path,
+    emit_event: AgentEventEmitter,
+) -> None:
+  try:
+    await run_hooks(
+        hooks,
+        trigger="post_tool",
+        context=context,
+        project_root=root,
+        emit_event=emit_event,
+    )
+  except HookBlockedError:
+    return
+
+
+def _hook_context_base(
+    *,
+    resolved_session_id: str,
+    resolved_user_id: str,
+    project_root: Path,
+    display_name: str,
+    event_prefix: str,
+    model_config_id: str,
+) -> dict[str, Any]:
+  return {
+      "session_id": resolved_session_id,
+      "user_id": resolved_user_id,
+      "project_root": str(project_root),
+      "agent_name": display_name,
+      "agent_event_prefix": event_prefix,
+      "model_config_id": model_config_id,
+  }
 
 
 def _prepare_user_input_response(

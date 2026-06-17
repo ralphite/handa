@@ -5,6 +5,7 @@ from typing import Any
 from ..contract import task_store
 from ..contract.product import DEFAULT_WEB_AGENT_ID
 from ..contract.product import get_agent_definition
+from ..contract.product import hooks_for_agent
 from ..contract.product import resolve_agent_id_for_runtime
 from ..contract.task_store import create_web_turn_task
 from ..contract.task_store import now_iso
@@ -62,6 +63,7 @@ def create_turn_run_record(ctx: WebApiContext, turn_id: str) -> dict[str, Any] |
       model_config_id=turn.get("model_config_id"),
       streaming_mode_enabled=_streaming_enabled(ctx),
       attachments=ctx.db.list_attachments_for_turn(turn_id),
+      hooks=hooks_for_agent(agent_id),
   )
 
 

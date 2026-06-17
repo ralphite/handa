@@ -10,7 +10,7 @@
 // menu UI. `kind` tells the composer how a chosen command resolves — for now
 // the only resolution is opening the model picker.
 
-export type SlashCommandKind = 'model'
+export type SlashCommandKind = 'model' | 'goal'
 
 export interface SlashCommand {
   /** Stable identity used for keys and analytics. */
@@ -35,6 +35,14 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     description: 'Switch the active model',
     aliases: ['models'],
     kind: 'model',
+  },
+  {
+    id: 'goal',
+    name: 'goal',
+    title: 'Goal',
+    description: 'Set the active session goal',
+    aliases: ['goals', 'objective'],
+    kind: 'goal',
   },
 ]
 

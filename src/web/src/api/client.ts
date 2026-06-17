@@ -19,6 +19,7 @@ import type {
   BackendSettingsUpdate,
   BackendBrowserEnvironment,
   BackendBrowserInteraction,
+  BackendSessionGoal,
   BackendAutomatedTask,
   BackendAutomatedTaskDetail,
   BackendAutomatedTaskCreate,
@@ -195,6 +196,7 @@ export async function createTurn(
   modelConfigId?: string,
   files: File[] = [],
   existingAttachmentIds: string[] = [],
+  goal = false,
 ): Promise<BackendTurn> {
   const form = new FormData()
   form.append('input_text', inputText)
@@ -202,6 +204,7 @@ export async function createTurn(
   form.append('agent_id', agentId)
   if (modelConfigId) form.append('model_config_id', modelConfigId)
   if (sessionId) form.append('session_id', sessionId)
+  if (goal) form.append('goal', 'true')
   if (existingAttachmentIds.length) {
     form.append('existing_attachment_ids', JSON.stringify(existingAttachmentIds))
   }
@@ -255,6 +258,22 @@ export async function getSessionDetail(
 ): Promise<BackendSessionDetail> {
   const query = options.includeEvents === false ? '?include_events=false' : ''
   return request(`/sessions/${encodeURIComponent(sessionId)}/detail${query}`)
+}
+
+export async function updateSessionGoal(
+  sessionId: string,
+  text: string,
+): Promise<BackendSessionGoal> {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/goal`, {
+    method: 'PUT',
+    body: JSON.stringify({ text }),
+  })
+}
+
+export async function clearSessionGoal(sessionId: string): Promise<BackendSessionGoal> {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/goal`, {
+    method: 'DELETE',
+  })
 }
 
 export async function refreshBrowserEnvironment(sessionId: string): Promise<BackendBrowserEnvironment> {

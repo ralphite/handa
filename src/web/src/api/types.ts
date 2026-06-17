@@ -80,6 +80,17 @@ export interface BackendSession {
   unread_at?: string | null
 }
 
+export interface BackendSessionGoal {
+  goal_id?: string | null
+  text: string
+  status: string
+  created_turn_id?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  max_attempts?: number | null
+  reason?: string | null
+}
+
 export interface BackendTurnAttachment {
   id: string
   turn_id: string
@@ -193,6 +204,7 @@ export interface BackendSessionDetail {
   forked_from_turn_id?: string | null
   forked_at?: string | null
   prompt?: string | null
+  goal?: BackendSessionGoal | null
   input_token_count?: number
   output_token_count?: number
   total_token_count?: number

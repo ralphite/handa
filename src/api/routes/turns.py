@@ -18,6 +18,8 @@ from fastapi.responses import Response
 from ...contract.product import DEFAULT_WEB_AGENT_ID
 from ...contract.product import get_agent_definition
 from ...contract.product import validate_model_config_id
+from ...contract.goals import GOAL_STATE_KEY
+from ...contract.goals import goal_state_for_text
 from ...contract.services import APP_NAME
 from ...contract.task_store import cancel_descendant_runs
 from ...contract.task_store import cancel_task
@@ -247,6 +249,7 @@ async def create_turn(
     trigger_kind: str = Form(default="user_message"),
     model_config_id: str | None = Form(default=None),
     existing_attachment_ids: str = Form(default=""),
+    goal: bool = Form(default=False),
     files: list[UploadFile] = File(default=[]),
 ) -> dict:
   ctx = get_context(request)
@@ -255,6 +258,8 @@ async def create_turn(
   attachment_ids = _parse_existing_attachment_ids(existing_attachment_ids)
   if not input_text and not uploads and not attachment_ids:
     raise HTTPException(status_code=422, detail="input_text or files required")
+  if goal and not input_text:
+    raise HTTPException(status_code=422, detail="Goal text must not be empty.")
   if len(uploads) + len(attachment_ids) > MAX_ATTACHMENT_COUNT:
     raise HTTPException(
         status_code=413,
@@ -315,7 +320,6 @@ async def create_turn(
       raise HTTPException(status_code=400, detail=str(exc)) from exc
     session.state = session.state or {}
     session.state["handa:model_config_id"] = model_config_id
-    ctx.services.session_service._write_session(session)
     turn = ctx.db.create_turn(
         session_id=session_id,
         model_config_id=model_config_id,
@@ -323,10 +327,38 @@ async def create_turn(
         input_text=input_text,
         trigger_kind=trigger_kind,
     )
+    if goal:
+      try:
+        session.state[GOAL_STATE_KEY] = goal_state_for_text(
+            input_text,
+            previous=session.state.get(GOAL_STATE_KEY),
+            created_turn_id=str(turn["id"]),
+        )
+      except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    ctx.services.session_service._write_session(session)
     await _persist(session_id, turn)
     seed_session_title(ctx, session_id, project_id, agent_id, seed_text, input_text)
     dispatch_next_queued_turn(ctx, session_id)
   else:
+    async def _persist_new_goal(target_session_id: str, target_turn: dict) -> None:
+      await _persist(target_session_id, target_turn)
+      if not goal:
+        return
+      session_state = ctx.services.session_service.read_state_sync(target_session_id)
+      try:
+        goal_state = goal_state_for_text(
+            input_text,
+            previous=session_state.get(GOAL_STATE_KEY),
+            created_turn_id=str(target_turn["id"]),
+        )
+      except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+      ctx.services.session_service.merge_state_sync(
+          target_session_id,
+          {GOAL_STATE_KEY: goal_state},
+      )
+
     _, turn = await start_new_session_turn(
         ctx,
         project_id=project_id,
@@ -335,7 +367,8 @@ async def create_turn(
         input_text=input_text,
         trigger_kind=trigger_kind,
         seed_text=seed_text,
-        on_turn_created=_persist,
+        extra_session_state=None,
+        on_turn_created=_persist_new_goal,
     )
 
   return _present_owned_turn(ctx, turn)

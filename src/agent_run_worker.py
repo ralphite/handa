@@ -15,6 +15,8 @@ from .agents.native_loader import load_agent as load_native_agent
 from .config import AgentConfig
 from .config import agent_config_artifact_filename
 from .config import resolve_agent_config_model_config_id
+from .contract.hooks import normalize_hooks
+from .contract.hooks import run_hooks
 from .observability import setup_phoenix_tracing
 from .run_outcome import RunOutcome
 from .run_retry import run_with_retries
@@ -141,6 +143,8 @@ async def _run_with_child_event_log(
     session_service: HandaSessionService,
     storage_root,
     runner,
+    hooks: list[dict[str, Any]] | None = None,
+    hook_context: dict[str, Any] | None = None,
 ) -> str:
   runtime_events = RuntimeEventStore(storage_root)
   child_session_id = str(task.get("child_session_id") or task.get("session_id") or "")
@@ -167,32 +171,82 @@ async def _run_with_child_event_log(
   async def _attempt() -> RunOutcome:
     return await runner(emit_event)
 
-  outcome = await run_with_retries(
-      _attempt,
-      max_attempts=MAX_AGENT_RUN_ATTEMPTS,
-      base_delay_sec=RETRY_BASE_DELAY_SEC,
-      should_retry=lambda: not produced_output,
-      on_retry=lambda attempt, delay_sec, exc: _log_runtime_event(
-          log_handle,
-          {
-              "kind": "native.retry",
-              "summary": "Retrying child agent after transient error",
-              "payload": {
-                  "attempt": attempt,
-                  "next_attempt": attempt + 1,
-                  "delay_sec": delay_sec,
-                  "error": {
-                      "type": type(exc).__name__,
-                      "message": str(exc),
-                      "code": getattr(exc, "code", None),
-                  },
-              },
-          },
-      ),
+  resolved_hooks = list(hooks or [])
+  resolved_hook_context = dict(hook_context or {})
+  await run_hooks(
+      resolved_hooks,
+      trigger="pre_invocation",
+      context={**resolved_hook_context, "trigger": "pre_invocation"},
+      project_root=resolved_hook_context.get("project_root"),
+      emit_event=emit_event,
+  )
+  try:
+    outcome = await run_with_retries(
+        _attempt,
+        max_attempts=MAX_AGENT_RUN_ATTEMPTS,
+        base_delay_sec=RETRY_BASE_DELAY_SEC,
+        should_retry=lambda: not produced_output,
+        on_retry=lambda attempt, delay_sec, exc: _log_runtime_event(
+            log_handle,
+            {
+                "kind": "native.retry",
+                "summary": "Retrying child agent after transient error",
+                "payload": {
+                    "attempt": attempt,
+                    "next_attempt": attempt + 1,
+                    "delay_sec": delay_sec,
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                        "code": getattr(exc, "code", None),
+                    },
+                },
+            },
+        ),
+    )
+  except BaseException as exc:
+    await _run_post_invocation_hooks(
+        resolved_hooks,
+        context={
+            **resolved_hook_context,
+            "trigger": "post_invocation",
+            "status": "cancelled" if type(exc).__name__ == "CancelledError" else "failed",
+            "error": type(exc).__name__,
+        },
+        emit_event=emit_event,
+    )
+    raise
+  await _run_post_invocation_hooks(
+      resolved_hooks,
+      context={
+          **resolved_hook_context,
+          "trigger": "post_invocation",
+          "status": "waiting_input" if outcome.pending_user_input is not None else "completed",
+          "final_text": outcome.final_text,
+      },
+      emit_event=emit_event,
   )
   if outcome.pending_user_input is not None:
     raise RuntimeError("request_user_input is not supported in child agent runs")
   return outcome.final_text
+
+
+async def _run_post_invocation_hooks(
+    hooks: list[dict[str, Any]],
+    *,
+    context: dict[str, Any],
+    emit_event,
+) -> None:
+  try:
+    await run_hooks(
+        hooks,
+        trigger="post_invocation",
+        context=context,
+        project_root=context.get("project_root"),
+        emit_event=emit_event,
+    )
+  except Exception:  # noqa: BLE001 - post hooks must not rewrite run outcome.
+    return
 
 
 async def _run_config_task(
@@ -211,6 +265,9 @@ async def _run_config_task(
       parent_session_id=parent_session_id,
       user_id=user_id,
   )
+  task["hooks"] = normalize_hooks(config.hooks)
+  if task.get("id") and task.get("session_id"):
+    save_task(task)
 
   async def runner(emit_event):
     return await run_config_agent(
@@ -230,6 +287,8 @@ async def _run_config_task(
       session_service=session_service,
       storage_root=storage_root,
       runner=runner,
+      hooks=normalize_hooks(config.hooks),
+      hook_context=_child_hook_context(task, user_id=user_id, agent_id=config.name),
   )
 
 
@@ -259,7 +318,31 @@ async def _run_registered_agent_task(
       session_service=session_service,
       storage_root=storage_root,
       runner=runner,
+      hooks=list(task.get("hooks") or []),
+      hook_context=_child_hook_context(
+          task,
+          user_id=str(task.get("user_id") or ""),
+          agent_id=str(task.get("agent_id") or ""),
+      ),
   )
+
+
+def _child_hook_context(
+    task: dict[str, Any],
+    *,
+    user_id: str,
+    agent_id: str,
+) -> dict[str, Any]:
+  return {
+      "session_id": task.get("child_session_id") or task.get("session_id"),
+      "parent_session_id": task.get("session_id"),
+      "task_id": task.get("id"),
+      "agent_id": agent_id,
+      "agent_runtime": task.get("agent_runtime") or "native",
+      "project_root": task.get("project_root"),
+      "model_config_id": task.get("model_config_id"),
+      "user_id": user_id,
+  }
 
 
 def _task_prompt(task: dict[str, Any]) -> str:
@@ -428,6 +511,8 @@ def _event_counts_as_user_visible_output(event: Any) -> bool:
   kind = str(event.get("kind") or "")
   if not kind:
     return True
+  if kind.startswith("hook."):
+    return False
   if kind.endswith(".started") or kind.endswith(".history_boundary"):
     return False
   return True

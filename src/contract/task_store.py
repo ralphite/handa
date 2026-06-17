@@ -16,6 +16,8 @@ import time
 from typing import Any
 import uuid
 
+from .hooks import HookBlockedError
+from .hooks import run_hooks_sync
 from ..storage.file_io import atomic_write_text
 from ..storage.file_io import file_lock
 from ..storage.paths import resolve_storage_root
@@ -284,6 +286,7 @@ def start_web_turn_task(
     model_config_id: str | None = None,
     streaming_mode_enabled: bool = True,
     attachments: list[dict[str, Any]] | None = None,
+    hooks: list[dict[str, Any]] | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
   """Persist a web turn run record and spawn its worker process."""
@@ -298,6 +301,7 @@ def start_web_turn_task(
       model_config_id=model_config_id,
       streaming_mode_enabled=streaming_mode_enabled,
       attachments=attachments,
+      hooks=hooks,
   )
   return spawn_web_turn_worker(task, extra_env=extra_env)
 
@@ -313,6 +317,7 @@ def create_web_turn_task(
     model_config_id: str | None = None,
     streaming_mode_enabled: bool = True,
     attachments: list[dict[str, Any]] | None = None,
+    hooks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
   """Persist a web turn run record without spawning the worker.
 
@@ -330,6 +335,7 @@ def create_web_turn_task(
       "model_config_id": model_config_id,
       "input_text": input_text,
       "attachments": attachments or [],
+      "hooks": hooks or [],
       "streaming_mode_enabled": streaming_mode_enabled,
       "resume_user_input": None,
       "user_id": user_id,
@@ -483,6 +489,7 @@ def cancel_task(
   task = load_task(task_id, session_id=session_id)
   if task["status"] not in {"queued", "running", "waiting"}:
     return {"success": False, "task_id": task_id, "error": f"task is {task['status']}"}
+  _run_stop_requested_hooks(task)
   pid = task.get("command_pid") or task.get("worker_pid")
   if task["status"] == "waiting" and not pid:
     task["cancel_requested_at"] = now_iso()
@@ -516,6 +523,46 @@ def cancel_task(
       task_id=task_id,
   )
   return {"success": True, "task_id": task_id}
+
+
+def _run_stop_requested_hooks(task: dict[str, Any]) -> None:
+  hooks = task.get("hooks") or []
+  if not hooks:
+    return
+
+  def emit(event: dict[str, Any]) -> None:
+    append_task_event(
+        str(event.get("kind") or "hook.event"),
+        str(event.get("summary") or "Hook event"),
+        session_id=str(task["session_id"]),
+        task_id=str(task["id"]),
+        payload=dict(event.get("payload") or {}),
+    )
+
+  try:
+    run_hooks_sync(
+        hooks,
+        trigger="stop_requested",
+        context={
+            "session_id": task.get("session_id"),
+            "turn_id": task.get("id") if task.get("kind") == "web_turn" else None,
+            "task_id": task.get("id"),
+            "agent_id": task.get("agent_id"),
+            "agent_runtime": task.get("agent_runtime"),
+            "reason": "cancel_task",
+            "status": task.get("status"),
+        },
+        project_root=task.get("project_root"),
+        emit_event=emit,
+    )
+  except HookBlockedError as exc:
+    append_task_event(
+        "hook.ignored_block",
+        f"Stop hook {exc.hook_id} requested a block",
+        session_id=str(task["session_id"]),
+        task_id=str(task["id"]),
+        payload={"hook_id": exc.hook_id, "trigger": exc.trigger, "result": exc.result},
+    )
 
 def cancel_descendant_runs(
     session_id: str,

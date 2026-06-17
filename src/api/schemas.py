@@ -77,6 +77,21 @@ class SessionSummary(BaseModel):
   unread_at: str | None = None
 
 
+class SessionGoal(BaseModel):
+  goal_id: str | None = None
+  text: str = ""
+  status: str = "cleared"
+  created_turn_id: str | None = None
+  created_at: str | None = None
+  updated_at: str | None = None
+  max_attempts: int | None = None
+  reason: str | None = None
+
+
+class SessionGoalUpdateRequest(BaseModel):
+  text: str = Field(max_length=4000)
+
+
 class BreadcrumbSummary(BaseModel):
   id: str
   label: str
@@ -176,6 +191,7 @@ class SessionDetail(BaseModel):
   forked_from_turn_id: str | None = None
   forked_at: str | None = None
   prompt: str | None = None
+  goal: SessionGoal | None = None
   input_token_count: int = 0
   output_token_count: int = 0
   total_token_count: int = 0
