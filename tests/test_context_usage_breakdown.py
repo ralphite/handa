@@ -231,7 +231,7 @@ def test_static_context_usage_breakdown_previews_orca():
 
   by_id = {item["id"]: item for item in result}
   assert by_id["instruction"]["token_count"] > 0
-  assert by_id["skills"]["token_count"] == 0
+  assert by_id["skills"]["token_count"] > 0
   assert by_id["user_messages"]["token_count"] == 0
   assert by_id["tool_call_responses"]["token_count"] == 0
   assert by_id["llm_responses"]["token_count"] == 0

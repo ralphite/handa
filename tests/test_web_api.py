@@ -1137,7 +1137,9 @@ def test_web_api_agent_catalog(tmp_path, monkeypatch):
   assert sections["identity"]["title"]
   assert "{agent_name}" in sections["identity"]["template"]
 
-  assert body["skills"] == []
+  skill_names = {skill["name"] for skill in body["skills"]}
+  assert {"chat-session-analysis", "qa", "vcs-jj"} <= skill_names
+  assert "browser" not in skill_names
 
   assert body["model_configs"]
   first_option = body["model_configs"][0]
@@ -1159,7 +1161,9 @@ def test_web_api_agent_catalog_without_introspection_export(tmp_path, monkeypatc
   body = response.json()
   assert body["tools"] == []
   assert body["instruction_sections"]
-  assert body["skills"] == []
+  skill_names = {skill["name"] for skill in body["skills"]}
+  assert {"chat-session-analysis", "qa", "vcs-jj"} <= skill_names
+  assert "browser" not in skill_names
 
 
 def test_web_api_invocation_creation_persists_native_runtime(

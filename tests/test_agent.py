@@ -6,6 +6,7 @@ from src.agents.browser.loader import MAIN_CONFIG_PATH as BROWSER_MAIN_CONFIG_PA
 from src.agents.native_loader import list_agent_definitions
 from src.agents.orca.tools import SessionContext
 from src.agents.orca.tools import build_toolset
+from src.agents.ralph.loader import MAIN_CONFIG_PATH as RALPH_MAIN_CONFIG_PATH
 from src.agents.tool_catalog import known_agent_tool_names
 from src.config import load_agent_config
 from src.config import load_agent_config_from_path
@@ -44,7 +45,7 @@ def test_main_agent_config_selects_explicit_tools():
       SessionContext(session_id="session-main", user_id="user"),
   )
 
-  assert config.skills == []
+  assert config.skills == ["chat-session-analysis", "qa", "vcs-jj"]
   tool_names = set(toolset.callables)
   assert "files_read" in tool_names
   assert "commands_run" in tool_names
@@ -93,3 +94,19 @@ def test_browser_sub_agent_owns_browser_tools():
     assert name in tool_names
   assert "skills_read" not in tool_names
   assert "commands_run" not in tool_names
+
+
+def test_ralph_internal_agents_keep_vcs_skill():
+  builder_config = load_agent_config_from_path(
+      RALPH_MAIN_CONFIG_PATH.parent / "ralph_builder.agent.json"
+  )
+  verifier_config = load_agent_config_from_path(
+      RALPH_MAIN_CONFIG_PATH.parent / "ralph_verifier.agent.json"
+  )
+  planner_config = load_agent_config_from_path(
+      RALPH_MAIN_CONFIG_PATH.parent / "ralph_planner.agent.json"
+  )
+
+  assert builder_config.skills == ["vcs-jj"]
+  assert verifier_config.skills == ["vcs-jj"]
+  assert planner_config.skills == []

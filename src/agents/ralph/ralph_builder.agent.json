@@ -22,7 +22,9 @@
     "notifications_get",
     "notes_add"
   ],
-  "skills": [],
+  "skills": [
+    "vcs-jj"
+  ],
   "instruction_sections": [
     "identity",
     "task_execution",

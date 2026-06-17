@@ -34,7 +34,11 @@
     "notes_add",
     "request_user_input"
   ],
-  "skills": [],
+  "skills": [
+    "chat-session-analysis",
+    "qa",
+    "vcs-jj"
+  ],
   "subagents": [
     "self",
     "browser"

@@ -134,7 +134,8 @@ def test_system_skill_wins_name_collision(tmp_path, monkeypatch):
   assert result["content"].endswith("# system\n")
 
 
-def test_public_repo_does_not_bundle_markdown_system_skills():
+def test_public_repo_bundles_runtime_system_skills(tmp_path, monkeypatch):
+  monkeypatch.setattr(skills, "SKILLS_DIR", tmp_path / "user")
   listed = skills.list()["skills"]
 
   system_names = {
@@ -142,7 +143,20 @@ def test_public_repo_does_not_bundle_markdown_system_skills():
       for item in listed
       if item.get("source") == "system"
   }
-  assert system_names == set()
+  expected_system_names = {"chat-session-analysis", "qa", "vcs-jj"}
+  assert expected_system_names <= system_names
+  assert "browser" not in system_names
+
+  for name in expected_system_names:
+    result = skills.read(name)
+    assert result["success"] is True
+    assert result["source"] == "system"
+    assert result["path"].endswith(f"/src/skills/{name}/SKILL.md")
+    assert result["content"]
+
+  assert (skills.SYSTEM_SKILLS_DIR / "qa/references/issue-taxonomy.md").is_file()
+  assert (skills.SYSTEM_SKILLS_DIR / "qa/templates/qa-report-template.md").is_file()
+  assert skills.read("browser")["success"] is False
 
 
 def test_render_skill_instructions_for_agent_config(tmp_path, monkeypatch):
@@ -175,3 +189,18 @@ def test_render_skill_instructions_for_agent_config(tmp_path, monkeypatch):
   assert f"<path>{skill_path.resolve()}</path>" in rendered
   assert "<skill_usage>" in rendered
   assert "Run the smallest meaningful verification." not in rendered
+
+
+def test_render_skill_instructions_for_system_agent_config(tmp_path, monkeypatch):
+  monkeypatch.setattr(skills, "SKILLS_DIR", tmp_path / "user")
+
+  rendered = render_skill_instructions(["chat-session-analysis", "qa", "vcs-jj"])
+
+  assert rendered.startswith("<skills>")
+  for name in ("chat-session-analysis", "qa", "vcs-jj"):
+    assert f"<name>{name}</name>" in rendered
+    assert "<source>system</source>" in rendered
+    assert f"/src/skills/{name}/SKILL.md</path>" in rendered
+  assert "Read, reconstruct, and analyze Handa chat session data" in rendered
+  assert "Use jj (Jujutsu) for local version control" in rendered
+  assert "# Chat Session Analysis" not in rendered

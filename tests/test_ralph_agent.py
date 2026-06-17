@@ -209,17 +209,19 @@ def test_native_ralph_updates_pending_plan_before_confirmation(tmp_path, monkeyp
 
 
 def test_native_ralph_internal_configs_are_present():
-  for filename in (
-      "ralph_builder.agent.json",
-      "ralph_planner.agent.json",
-      "ralph_verifier.agent.json",
-  ):
+  expected_skills = {
+      "ralph_builder.agent.json": ["vcs-jj"],
+      "ralph_planner.agent.json": [],
+      "ralph_verifier.agent.json": ["vcs-jj"],
+  }
+  for filename, skills in expected_skills.items():
     native_config = json.loads(
         (MAIN_CONFIG_PATH.parent / filename).read_text(encoding="utf-8")
     )
 
     assert native_config["name"]
     assert native_config["model_config_id"]
+    assert native_config["skills"] == skills
 
 
 def test_native_ralph_package_has_no_framework_dependency():
