@@ -82,7 +82,11 @@ def sync_turn_with_run_record(ctx: WebApiContext, turn: dict[str, Any]) -> dict[
     updates["finished_at"] = task.get("finished_at") or now_iso()
   elif mapped == "failed":
     updates["error_type"] = task.get("error_type") or "WorkerFailed"
-    updates["error_message"] = task.get("error_message") or "Turn worker failed."
+    updates["error_message"] = (
+        task.get("error_message")
+        or task.get("error_type")
+        or "Turn worker failed."
+    )
     updates["finished_at"] = task.get("finished_at") or now_iso()
   elif mapped == "cancelled":
     updates["error_type"] = "Cancelled"

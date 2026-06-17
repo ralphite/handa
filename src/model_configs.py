@@ -9,6 +9,12 @@ DEFAULT_MODEL_CONFIG_ID = "gemini-3.1-pro-high"
 DEFAULT_MODEL_RETRY_ATTEMPTS = 5
 DEFAULT_MODEL_RETRY_INITIAL_DELAY_SEC = 1.0
 DEFAULT_MODEL_RETRY_MAX_DELAY_SEC = 60.0
+# Bound how long a single buffered generate_content may hold the connection
+# open. Without it a slow/stalled response can sit waiting for response headers
+# for many minutes before the peer resets it (surfacing as an opaque
+# httpx.ReadError); with it a stuck call fails as a ReadTimeout fast enough to
+# be retried at the model-call layer.
+DEFAULT_MODEL_REQUEST_TIMEOUT_MS = 300_000
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,8 @@ def with_default_model_retry_options(
   )
   if http_options.retry_options is None:
     http_options.retry_options = default_model_retry_options()
+  if http_options.timeout is None:
+    http_options.timeout = DEFAULT_MODEL_REQUEST_TIMEOUT_MS
   configured.http_options = http_options
   return configured
 

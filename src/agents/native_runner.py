@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import uuid
 from collections.abc import Awaitable
@@ -9,6 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -35,6 +38,16 @@ from .subagent_prompt import render_subagent_instructions
 load_dotenv()
 if "GOOGLE_API_KEY" not in os.environ and "GEMINI_API_KEY" in os.environ:
   os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+
+LOGGER = logging.getLogger("handa.native_runner")
+
+# The genai SDK retries on HTTP status codes (429/5xx) but not on transport
+# failures like a dropped/reset connection (httpx.ReadError/ConnectError) or a
+# ReadTimeout. Those are transient too, so retry the single model call here — at
+# the per-call layer, so a mid-turn drop is recovered without re-running the
+# whole invocation (which is forbidden once output has streamed this turn).
+MODEL_TRANSPORT_RETRY_ATTEMPTS = 3
+MODEL_TRANSPORT_RETRY_BASE_DELAY_SEC = 1.0
 
 AgentEventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 BuildSessionContext = Callable[..., Any]
@@ -429,10 +442,29 @@ async def generate_model_response(
     contents: list[types.Content],
     config: types.GenerateContentConfig,
 ) -> Any:
-  return await client.aio.models.generate_content(
-      model=model,
-      contents=contents,
-      config=config,
+  delay_sec = MODEL_TRANSPORT_RETRY_BASE_DELAY_SEC
+  for attempt_no in range(1, MODEL_TRANSPORT_RETRY_ATTEMPTS + 1):
+    try:
+      return await client.aio.models.generate_content(
+          model=model,
+          contents=contents,
+          config=config,
+      )
+    except httpx.TransportError as exc:
+      if attempt_no >= MODEL_TRANSPORT_RETRY_ATTEMPTS:
+        raise
+      LOGGER.warning(
+          "Retrying model call after transport error: attempt=%s "
+          "next_delay_sec=%s model=%s error=%s",
+          attempt_no,
+          delay_sec,
+          model,
+          f"{type(exc).__name__}: {exc}",
+      )
+      await asyncio.sleep(delay_sec)
+      delay_sec *= 2
+  raise AssertionError(  # pragma: no cover - loop returns or raises above.
+      "generate_model_response: unreachable"
   )
 
 

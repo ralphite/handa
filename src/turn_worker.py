@@ -31,6 +31,17 @@ def _configure_environment() -> None:
   setup_phoenix_tracing()
 
 
+def _describe_exc(exc: BaseException) -> str:
+  """A human-facing failure message; never empty.
+
+  Some transport errors (notably httpx.ReadError from a dropped model
+  connection) stringify to "", which the UI then renders as the generic
+  "Turn worker failed." Fall back to the exception type so the real failure is
+  at least named.
+  """
+  return str(exc) or type(exc).__name__
+
+
 async def _run_turn(session_id: str, turn_id: str) -> int:
   task = load_task(turn_id, session_id=session_id)
   services = create_handa_services()
@@ -147,21 +158,21 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
         session_id=session_id,
         turn_id=turn_id,
         kind="error",
-        summary=str(exc),
+        summary=_describe_exc(exc),
         payload={
             # `error_code` is carried (null here) so error steps share one field
             # shape with the runtime's error event, which reports `error_code`
             # and a null `error_type`.
             "error_type": type(exc).__name__,
             "error_code": None,
-            "error_message": str(exc),
+            "error_message": _describe_exc(exc),
             "traceback": traceback.format_exc(),
         },
     )
     task = load_task(turn_id, session_id=session_id)
     task["status"] = "failed"
     task["error_type"] = type(exc).__name__
-    task["error_message"] = str(exc)
+    task["error_message"] = _describe_exc(exc)
     task["finished_at"] = now_iso()
     task["returncode"] = 1
     save_task(task)
@@ -179,7 +190,7 @@ async def _run_turn(session_id: str, turn_id: str) -> int:
         turn_status="failed",
         final_text=None,
         error_type=type(exc).__name__,
-        error_message=str(exc),
+        error_message=_describe_exc(exc),
     )
     return 1
   finally:
