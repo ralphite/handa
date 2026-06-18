@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Bot, Box, Clock, FileText, Loader2, Mic, Paperclip, Pencil, Sparkles, Square, Target, Undo2, X } from '@lucide/vue'
+import { ArrowRight, Bot, Box, FileText, Hourglass, Loader2, Mic, Paperclip, Pencil, Sparkles, Square, Target, Undo2, X } from '@lucide/vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from 'vue'
 import { useDictation } from '../composables/useDictation'
 import { useOptimizePrompt } from '../composables/useOptimizePrompt'
@@ -899,7 +899,7 @@ defineExpose({
         :key="message.id"
         class="flex min-w-0 items-center gap-2 rounded-md px-1 py-1"
       >
-        <Clock :size="13" class="shrink-0 text-[color:var(--text-muted)]" />
+        <Hourglass :size="13" class="shrink-0 text-[color:var(--text-muted)]" />
         <p
           class="min-w-0 flex-1 truncate text-[13px] text-[color:var(--text-primary)]"
           v-tooltip="{ content: pendingPromptLabel(message), overflowOnly: true }"
