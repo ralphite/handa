@@ -45,8 +45,8 @@ const sections: Array<{
   label: string
   icon: Component
 }> = [
-  { id: 'gemini-api-key', label: 'Gemini API Key', icon: KeyRound },
   { id: 'theme', label: 'Theme', icon: Palette },
+  { id: 'gemini-api-key', label: 'Gemini API Key', icon: KeyRound },
   { id: 'archived-chats', label: 'Archived Chats', icon: Archive },
 ]
 
