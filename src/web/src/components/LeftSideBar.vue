@@ -26,6 +26,11 @@ import {
 } from "@lucide/vue";
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import ChatSearchDialog from "./ChatSearchDialog.vue";
+import {
+  DEFAULT_VISIBLE_SESSIONS,
+  SHOW_MORE_SESSION_INCREMENT,
+  sidebarSessionPagination,
+} from "../presenters/sidebarSessions";
 import type { ProjectNavItem, SessionNavSummary } from "../types";
 
 defineOptions({
@@ -134,8 +139,6 @@ function checkScroll() {
   needsScroll.value = el.scrollHeight > el.clientHeight;
 }
 
-const DEFAULT_VISIBLE_SESSIONS = 10;
-const SHOW_MORE_SESSION_INCREMENT = 50;
 const hasMultipleProjects = computed(() => props.projects.length > 1);
 const firstProjectId = computed(() => props.projects[0]?.id ?? "");
 const allSessions = computed(() =>
@@ -416,29 +419,27 @@ function unreadLikeLabel(session: SessionNavSummary) {
 }
 
 function sessionLimit(project: ProjectNavItem) {
-  if (!hasMultipleProjects.value) return project.sessions.length;
-  return Math.min(
-    visibleSessionCounts.value[project.id] ?? DEFAULT_VISIBLE_SESSIONS,
-    project.sessions.length,
-  );
+  return sessionPagination(project).limit;
 }
 
 function visibleSessions(project: ProjectNavItem) {
   return project.sessions.slice(0, sessionLimit(project));
 }
 
+function sessionPagination(project: ProjectNavItem) {
+  return sidebarSessionPagination({
+    hasMultipleProjects: hasMultipleProjects.value,
+    sessionCount: project.sessions.length,
+    visibleSessionCount: visibleSessionCounts.value[project.id],
+  });
+}
+
 function canShowMoreSessions(project: ProjectNavItem) {
-  return (
-    hasMultipleProjects.value && sessionLimit(project) < project.sessions.length
-  );
+  return sessionPagination(project).canShowMore;
 }
 
 function canShowLessSessions(project: ProjectNavItem) {
-  return (
-    hasMultipleProjects.value &&
-    project.sessions.length > DEFAULT_VISIBLE_SESSIONS &&
-    sessionLimit(project) >= project.sessions.length
-  );
+  return sessionPagination(project).canShowLess;
 }
 
 function showMoreSessions(project: ProjectNavItem) {
@@ -885,7 +886,7 @@ onUnmounted(() => {
                 Show more
               </button>
               <button
-                v-else-if="canShowLessSessions(project)"
+                v-if="canShowLessSessions(project)"
                 class="-mx-3 flex h-8 w-[calc(100%+1.5rem)] items-center justify-start rounded-none pl-10 pr-4 text-[12px] font-normal text-[color:var(--text-faint)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-muted)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
                 type="button"
                 data-testid="project-sessions-show-less"
