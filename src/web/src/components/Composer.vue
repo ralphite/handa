@@ -877,8 +877,7 @@ defineExpose({
     </div>
 
     <div
-      class="relative w-full rounded-xl border border-[color:var(--border-subtle)] bg-[var(--surface)] px-3 pb-3 shadow-sm shadow-[var(--shadow-color)]"
-      :class="showGoalChip ? 'pt-9' : 'pt-3'"
+      class="relative w-full rounded-xl border border-[color:var(--border-subtle)] bg-[var(--surface)] px-3 pb-3 pt-3 shadow-sm shadow-[var(--shadow-color)]"
       data-testid="composer"
       :data-mode="isEditing ? 'edit' : 'send'"
     >
@@ -890,26 +889,9 @@ defineExpose({
       @select="onSlashMenuSelect"
       @hover="slashHighlight = $event"
     />
-    <button
-      v-if="showGoalChip"
-      class="group absolute left-3 top-2 z-10 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)] focus:outline-none focus-visible:bg-[var(--surface-hover)] focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
-      type="button"
-      aria-label="Remove goal label"
-      data-testid="composer-goal"
-      @click="draftGoal = false"
-    >
-      <Target :size="14" class="shrink-0" />
-      <span>Goal</span>
-      <X
-        :size="12"
-        class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-        aria-hidden="true"
-      />
-    </button>
     <div
       v-if="pendingMessages?.length"
-      class="-mx-3 mb-2 flex flex-col border-b border-[color:var(--border-muted)] px-3 py-1.5"
-      :class="showGoalChip ? '' : '-mt-3'"
+      class="-mx-3 -mt-3 mb-2 flex flex-col border-b border-[color:var(--border-muted)] px-3 py-1.5"
       data-testid="composer-pending-messages"
     >
       <div
@@ -955,6 +937,22 @@ defineExpose({
         </button>
       </div>
     </div>
+    <button
+      v-if="showGoalChip"
+      class="group mb-2 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-secondary)] focus:outline-none focus-visible:bg-[var(--surface-hover)] focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
+      type="button"
+      aria-label="Remove goal label"
+      data-testid="composer-goal"
+      @click="draftGoal = false"
+    >
+      <Target :size="14" class="shrink-0" />
+      <span>Goal</span>
+      <X
+        :size="12"
+        class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden="true"
+      />
+    </button>
     <div
       v-if="editingMessage"
       class="mb-2 flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1"
