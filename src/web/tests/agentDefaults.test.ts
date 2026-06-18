@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { COMPOSER_AGENT_IDS, DEFAULT_AGENT_ID } from '../src/agentDefaults'
+import { COMPOSER_AGENT_IDS, COMPOSER_AGENT_LABELS, COMPOSER_AGENT_ORDER, DEFAULT_AGENT_ID } from '../src/agentDefaults'
 
 describe('agent defaults', () => {
   it('keeps Orca as the default composer agent', () => {
     expect(DEFAULT_AGENT_ID).toBe('orca')
   })
 
-  it('offers Ralph in the composer agent selector', () => {
+  it('orders and labels composer agents', () => {
+    expect(COMPOSER_AGENT_ORDER).toEqual(['orca', 'browser', 'ralph'])
     expect(COMPOSER_AGENT_IDS.has('ralph')).toBe(true)
+    expect(COMPOSER_AGENT_LABELS).toMatchObject({
+      orca: 'Orca',
+      browser: 'Browser',
+      ralph: 'Ralph',
+    })
   })
 })

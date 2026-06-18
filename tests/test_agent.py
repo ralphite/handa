@@ -13,8 +13,10 @@ from src.config import load_agent_config_from_path
 
 
 def test_native_agent_loader_lists_built_ins():
-  definitions = {definition.id: definition for definition in list_agent_definitions()}
+  listed = list_agent_definitions()
+  definitions = {definition.id: definition for definition in listed}
 
+  assert [definition.id for definition in listed] == ["orca", "browser", "ralph"]
   assert set(definitions) == {"browser", "orca", "ralph"}
   assert definitions["orca"].runtime == "native"
   assert definitions["browser"].runtime == "native"

@@ -24,7 +24,7 @@ class AgentDefinition:
 
 
 def list_agent_definitions() -> list[AgentDefinition]:
-  return sorted(_native_agent_definitions(), key=lambda definition: definition.id)
+  return _native_agent_definitions()
 
 
 def get_agent_definition(agent_id: str) -> AgentDefinition:

@@ -23,7 +23,7 @@ def list_agent_definitions() -> list[AgentDefinition]:
           id="ralph",
           runtime="native",
           entrypoint="src.agents.ralph.runner:run",
-          label="ralph",
+          label="Ralph",
           description=config.description,
       )
   ]

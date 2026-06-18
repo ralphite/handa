@@ -27,7 +27,7 @@ const catalog: BackendAgentCatalog = {
     { name: 'vcs-jj', skill_name: 'jj-workflows', description: 'Use jj.', source: 'system' },
   ],
   agents: [
-    { id: 'browser', runtime: 'native', label: 'browser', description: 'Drives a headless browser.' },
+    { id: 'browser', runtime: 'native', label: 'Browser', description: 'Drives a headless browser.' },
     { id: 'orca', runtime: 'native', label: 'Orca', description: '' },
   ],
   model_configs: [

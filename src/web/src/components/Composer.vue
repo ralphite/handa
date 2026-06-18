@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component 
 import { useDictation } from '../composables/useDictation'
 import { useOptimizePrompt } from '../composables/useOptimizePrompt'
 import type { BackendAgentDefinition, BackendModelConfigOption } from '../api/types'
-import { COMPOSER_AGENT_IDS, DEFAULT_AGENT_ID } from '../agentDefaults'
+import { COMPOSER_AGENT_LABELS, COMPOSER_AGENT_ORDER, DEFAULT_AGENT_ID } from '../agentDefaults'
 import type { ContextUsageSummary, EditMessagePayload, MessageAttachment, PendingUserMessage, SendPromptPayload } from '../types'
 import ComposerDropdown from './ComposerDropdown.vue'
 import ContextUsageDialog from './ContextUsageDialog.vue'
@@ -535,7 +535,11 @@ const modelDropdownOptions = computed(() => {
 const agentOptionItems = computed(() => {
   const definitions = props.agentDefinitions ?? []
   const currentAgentId = props.agentId ?? DEFAULT_AGENT_ID
-  const mainAgents = definitions.filter((agent) => COMPOSER_AGENT_IDS.has(agent.id))
+  const definitionsById = new Map(definitions.map((agent) => [agent.id, agent]))
+  const mainAgents = COMPOSER_AGENT_ORDER.flatMap((agentId) => {
+    const agent = definitionsById.get(agentId)
+    return agent ? [agent] : []
+  })
   const selected = definitions.find((agent) => agent.id === currentAgentId)
   if (selected && !mainAgents.some((agent) => agent.id === selected.id)) {
     return [selected, ...mainAgents]
@@ -553,7 +557,7 @@ const selectedAgent = computed(() => {
 const agentDropdownOptions = computed(() => {
   return agentOptionItems.value.map((agent) => ({
     id: agent.id,
-    label: agent.label,
+    label: COMPOSER_AGENT_LABELS[agent.id] ?? agent.label,
   }))
 })
 

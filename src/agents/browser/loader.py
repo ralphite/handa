@@ -24,7 +24,7 @@ def list_agent_definitions() -> list[AgentDefinition]:
           id="browser",
           runtime="native",
           entrypoint="src.agents.browser.runner:run",
-          label="browser",
+          label="Browser",
           description=config.description,
       )
   ]

@@ -17,8 +17,8 @@ def list_agent_definitions() -> list[AgentDefinition]:
 
   return [
       *list_orca_definitions(),
-      *list_ralph_definitions(),
       *list_browser_definitions(),
+      *list_ralph_definitions(),
   ]
 
 
