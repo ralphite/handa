@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -49,6 +50,50 @@ def test_run_agent_invocation_calls_native_runner(tmp_path, monkeypatch):
   assert captured["session_id"] == "session-1"
   assert captured["user_id"] == "user"
   assert events == [{"kind": "agent_text", "payload": {"text": "done"}}]
+
+
+def test_run_agent_invocation_creates_phoenix_span(tmp_path, monkeypatch):
+  spans = []
+
+  @contextmanager
+  def fake_trace_span(name, attributes=None):
+    spans.append((name, attributes))
+    yield
+
+  async def fake_runner(**kwargs):
+    return RunOutcome(final_text="done")
+
+  monkeypatch.setattr("src.run_manager.trace_span", fake_trace_span)
+  monkeypatch.setattr("src.run_manager.load_native_agent", lambda agent_id: fake_runner)
+
+  async def on_event(event):
+    return None
+
+  result = asyncio.run(
+      run_agent_invocation(
+          session_id="session-1",
+          user_id="user",
+          agent_id="orca",
+          input_text="hello",
+          on_event=on_event,
+          project_root=str(tmp_path),
+          model_config_id="gemini-3.5-flash",
+      )
+  )
+
+  assert result.final_text == "done"
+  assert spans == [
+      (
+          "handa.agent_invocation",
+          {
+              "session_id": "session-1",
+              "user_id": "user",
+              "agent_id": "orca",
+              "project_root": str(tmp_path.resolve()),
+              "model_config_id": "gemini-3.5-flash",
+          },
+      )
+  ]
 
 
 def test_run_agent_invocation_keeps_project_agents_out_of_user_prompt(

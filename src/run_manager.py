@@ -21,6 +21,7 @@ from .contract.hooks import run_hooks
 from .contract.product import hooks_for_agent
 from .goal_judge import GoalJudgeVerdict
 from .goal_judge import judge_goal_completion
+from .observability import trace_span
 from .run_outcome import RunOutcome
 from .run_retry import run_with_retries
 from .runtime import get_project_root
@@ -52,18 +53,29 @@ async def run_agent_invocation(
     hooks: list[dict[str, Any]] | None = None,
 ) -> RunOutcome:
   with project_context(project_root) if project_root else nullcontext():
-    return await _run_agent_invocation_in_project(
+    resolved_project_root = str(get_project_root())
+    with trace_span(
+        "handa.agent_invocation",
+        {
+            "session_id": session_id,
+            "user_id": user_id,
+            "agent_id": agent_id,
+            "project_root": resolved_project_root,
+            "model_config_id": model_config_id,
+        },
+    ):
+      return await _run_agent_invocation_in_project(
         agent_id=agent_id,
         session_id=session_id,
         user_id=user_id,
         input_text=input_text,
         attachments=attachments,
         on_event=on_event,
-        project_root=str(get_project_root()),
+        project_root=resolved_project_root,
         model_config_id=model_config_id,
         resume_user_input=resume_user_input,
         hooks=hooks,
-    )
+      )
 
 
 async def _run_agent_invocation_in_project(

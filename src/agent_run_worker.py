@@ -17,6 +17,7 @@ from .config import agent_config_artifact_filename
 from .config import resolve_agent_config_model_config_id
 from .contract.hooks import normalize_hooks
 from .contract.hooks import run_hooks
+from .observability import trace_span
 from .observability import setup_phoenix_tracing
 from .run_outcome import RunOutcome
 from .run_retry import run_with_retries
@@ -169,7 +170,18 @@ async def _run_with_child_event_log(
     session_service.merge_state_sync(child_session_id, {})
 
   async def _attempt() -> RunOutcome:
-    return await runner(emit_event)
+    with trace_span(
+        "handa.child_agent_run",
+        {
+            "session_id": child_session_id,
+            "parent_session_id": task.get("session_id"),
+            "task_id": task.get("id"),
+            "agent_id": resolved_hook_context.get("agent_id"),
+            "project_root": resolved_hook_context.get("project_root"),
+            "model_config_id": resolved_hook_context.get("model_config_id"),
+        },
+    ):
+      return await runner(emit_event)
 
   resolved_hooks = list(hooks or [])
   resolved_hook_context = dict(hook_context or {})
