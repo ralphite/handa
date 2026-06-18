@@ -10,10 +10,10 @@ from fastapi import Request
 from ...contract.product import DEFAULT_WEB_AGENT_ID
 from ...contract.product import get_agent_definition
 from ...contract.services import APP_NAME
-from ...contract.goals import GOAL_STATE_KEY
-from ...contract.goals import active_goal_from_state
 from ...contract.goals import cleared_goal_state
+from ...contract.goals import GOAL_STATE_KEY
 from ...contract.goals import goal_state_for_text
+from ...contract.goals import present_goal_from_state
 from ...contract.task_store import cancel_descendant_runs
 from ...contract.task_store import cancel_task
 from ...contract.storage import create_session_id
@@ -82,32 +82,9 @@ async def _session_automated_task_id(ctx: WebApiContext, session_id: str) -> str
 
 
 def _present_goal(state: dict[str, Any] | None) -> dict[str, Any]:
-  goal = active_goal_from_state(state)
-  if goal is not None:
-    return goal
-  raw = (state or {}).get(GOAL_STATE_KEY)
-  if isinstance(raw, dict):
-    status = str(raw.get("status") or "cleared")
-    return {
-        "goal_id": raw.get("goal_id"),
-        "text": "" if status == "cleared" else str(raw.get("text") or ""),
-        "status": status,
-        "created_turn_id": raw.get("created_turn_id"),
-        "created_at": raw.get("created_at"),
-        "updated_at": raw.get("updated_at"),
-        "max_attempts": raw.get("max_attempts"),
-        "reason": raw.get("reason"),
-    }
-  return {
-      "goal_id": None,
-      "text": "",
-      "status": "cleared",
-      "created_turn_id": None,
-      "created_at": None,
-      "updated_at": None,
-      "max_attempts": None,
-      "reason": None,
-  }
+  goal = present_goal_from_state(state, default_cleared=True)
+  assert goal is not None
+  return goal
 
 
 async def _load_session_for_goal(ctx: WebApiContext, session_id: str):

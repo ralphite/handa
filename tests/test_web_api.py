@@ -29,6 +29,9 @@ from src.storage.paths import browser_state_path
 from src.storage.runtime_event_store import RuntimeEventStore
 from src.api.background_task_manager import BackgroundTaskManager
 from src.api.turn_queue import dispatch_next_queued_turn
+from src.contract.goals import cleared_goal_state
+from src.contract.goals import finished_goal_state
+from src.contract.goals import GOAL_STATE_KEY
 from turn_test_helpers import execute_turn
 from src.api.app import create_app
 from src.api.routes.turns import generate_and_store_session_title
@@ -138,9 +141,36 @@ def test_web_api_goal_turn_marks_session_goal_and_keeps_normal_message(tmp_path,
 
   assert created["input_text"] == "Every answer should start with GOAL-ANCHOR."
   assert created["trigger_kind"] == "user_message"
-  assert session.state["handa:goal"]["text"] == "Every answer should start with GOAL-ANCHOR."
-  assert session.state["handa:goal"]["status"] == "active"
+  assert session.state[GOAL_STATE_KEY]["text"] == "Every answer should start with GOAL-ANCHOR."
+  assert session.state[GOAL_STATE_KEY]["status"] == "active"
+  assert session.state[GOAL_STATE_KEY]["created_turn_id"] == created["id"]
   assert detail["goal"]["text"] == "Every answer should start with GOAL-ANCHOR."
+  assert detail["goal"]["created_turn_id"] == created["id"]
+
+  ctx = app.state.web_context
+  ctx.services.session_service.merge_state_sync(
+      created["session_id"],
+      {
+          GOAL_STATE_KEY: finished_goal_state(
+              session.state[GOAL_STATE_KEY],
+              status="achieved",
+              reason="done",
+          )
+      },
+  )
+  terminal_detail = client.get(f"/api/sessions/{created['session_id']}/detail").json()
+  assert terminal_detail["goal"]["status"] == "achieved"
+  assert terminal_detail["goal"]["text"] == "Every answer should start with GOAL-ANCHOR."
+  assert terminal_detail["goal"]["created_turn_id"] == created["id"]
+
+  ctx.services.session_service.merge_state_sync(
+      created["session_id"],
+      {GOAL_STATE_KEY: cleared_goal_state(previous=terminal_detail["goal"])},
+  )
+  cleared_detail = client.get(f"/api/sessions/{created['session_id']}/detail").json()
+  assert cleared_detail["goal"]["status"] == "cleared"
+  assert cleared_detail["goal"]["text"] == ""
+  assert cleared_detail["goal"]["created_turn_id"] == created["id"]
 
 
 def test_web_api_session_list_hides_missing_storage_sessions(tmp_path, monkeypatch):

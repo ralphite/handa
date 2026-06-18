@@ -38,7 +38,6 @@ import type {
   BackendBrowserEnvironment,
   BackendBrowserInteraction,
   BackendContextUsageBreakdownItem,
-  BackendSessionGoal,
   BackendTurnAttachment,
   BackendBackgroundRun,
   BackendProgressItem,
@@ -58,7 +57,6 @@ import type {
   Artifact,
   MessageAttachment,
   ProjectNavItem,
-  SessionGoal,
   InvocationDetailEvent,
   InvocationTimelineItem,
   InvocationTokenUsage,
@@ -70,6 +68,7 @@ import type {
 } from '../types'
 import { DEFAULT_AGENT_ID } from '../agentDefaults'
 import { formatWorkDuration } from '../presenters/duration'
+import { goalFromBackend } from '../presenters/sessionGoal'
 import { toolResponsePayloadIndicatesFailedOutcome } from '../presenters/toolDisplay'
 import { removeDuplicateFinalProcessText } from '../presenters/timelineDisplay'
 
@@ -2180,20 +2179,6 @@ function browserEnvironmentFromDetail(
     screenshotUrl: browser.screenshot_url ?? null,
     streamUrl: browser.stream_url ?? null,
     viewport: browser.viewport ?? null,
-  }
-}
-
-function goalFromBackend(goal: BackendSessionGoal | null | undefined): SessionGoal | null {
-  if (!goal || goal.status !== 'active' || !goal.text.trim()) return null
-  return {
-    goalId: goal.goal_id ?? null,
-    text: goal.text,
-    status: goal.status,
-    createdTurnId: goal.created_turn_id ?? null,
-    createdAt: goal.created_at ?? null,
-    updatedAt: goal.updated_at ?? null,
-    maxAttempts: goal.max_attempts ?? null,
-    reason: goal.reason ?? null,
   }
 }
 

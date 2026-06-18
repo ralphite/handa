@@ -38,6 +38,41 @@ def active_goal_from_state(state: dict[str, Any] | None) -> dict[str, Any] | Non
   }
 
 
+def present_goal_from_state(
+    state: dict[str, Any] | None,
+    *,
+    default_cleared: bool = False,
+) -> dict[str, Any] | None:
+  goal = active_goal_from_state(state)
+  if goal is not None:
+    return goal
+  raw = (state or {}).get(GOAL_STATE_KEY)
+  if isinstance(raw, dict):
+    status = str(raw.get("status") or GOAL_STATUS_CLEARED)
+    return {
+        "goal_id": _optional_str(raw.get("goal_id")),
+        "text": "" if status == GOAL_STATUS_CLEARED else str(raw.get("text") or ""),
+        "status": status,
+        "created_turn_id": _optional_str(raw.get("created_turn_id")),
+        "created_at": _optional_str(raw.get("created_at")),
+        "updated_at": _optional_str(raw.get("updated_at")),
+        "max_attempts": _coerce_optional_positive_int(raw.get("max_attempts")),
+        "reason": _optional_str(raw.get("reason")),
+    }
+  if not default_cleared:
+    return None
+  return {
+      "goal_id": None,
+      "text": "",
+      "status": GOAL_STATUS_CLEARED,
+      "created_turn_id": None,
+      "created_at": None,
+      "updated_at": None,
+      "max_attempts": None,
+      "reason": None,
+  }
+
+
 def goal_state_for_text(
     text: str,
     *,
@@ -159,3 +194,11 @@ def _coerce_positive_int(value: Any, default: int) -> int:
   except (TypeError, ValueError):
     return default
   return parsed if parsed > 0 else default
+
+
+def _coerce_optional_positive_int(value: Any) -> int | None:
+  try:
+    parsed = int(value)
+  except (TypeError, ValueError):
+    return None
+  return parsed if parsed > 0 else None
