@@ -40,6 +40,7 @@ const props = defineProps<{
   projectName: string
   loading?: boolean
   error?: string
+  canRetryLoad?: boolean
   sendError?: string
   markdownIsDark?: boolean
   agentDefinitions?: BackendAgentDefinition[]
@@ -75,6 +76,7 @@ const emit = defineEmits<{
   browserInteract: [payload: BrowserInteraction]
   browserUpdate: [browser: AgentBrowserEnvironment]
   submitUserInput: [payload: UserInputSubmissionPayload]
+  retryLoad: []
 }>()
 
 const composerRef = ref<InstanceType<typeof Composer> | null>(null)
@@ -800,8 +802,17 @@ function cancelUserInput(payload: { requestId: string; turnId: string }) {
         />
 
         <template v-else>
-          <div v-if="error" class="rounded-xl border border-destructive/30 bg-destructive-soft px-4 py-3 text-[13px] text-destructive">
-            {{ error }}
+          <div v-if="error" class="flex items-center gap-3 rounded-xl border border-destructive/30 bg-destructive-soft px-4 py-3 text-[13px] text-destructive">
+            <span class="min-w-0 flex-1">{{ error }}</span>
+            <button
+              v-if="canRetryLoad"
+              class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition hover:bg-[var(--surface-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
+              type="button"
+              @click="emit('retryLoad')"
+            >
+              <RotateCcw :size="13" />
+              <span>Retry</span>
+            </button>
           </div>
 
           <article

@@ -39,6 +39,7 @@ const props = defineProps<{
   collapsed: boolean;
   hasProjects: boolean;
   projectsLoading?: boolean;
+  projectsError?: string;
   width?: number;
   isDragging?: boolean;
   /** Enables the Workflows nav entry for future-product previews. */
@@ -645,6 +646,13 @@ onUnmounted(() => {
               <LoaderCircle class="animate-spin" :size="15" />
               <span>Loading projects...</span>
             </div>
+          </div>
+          <div v-else-if="projectsError && !hasProjects" class="px-1 pb-5">
+            <p
+              class="text-[13px] leading-5 text-[color:var(--text-muted)]"
+            >
+              Unable to load projects.
+            </p>
           </div>
           <div v-else-if="!hasProjects" class="px-1 pb-5">
             <p

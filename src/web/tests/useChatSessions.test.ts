@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackendStep } from '../src/api/types'
 import { stepHasArtifactDelta, useChatSessions } from '../src/composables/useChatSessions'
 import type { AgentSession } from '../src/types'
@@ -33,6 +33,45 @@ describe('stepHasArtifactDelta', () => {
 })
 
 describe('useChatSessions', () => {
+  const originalFetch = globalThis.fetch
+  const originalWindow = globalThis.window
+
+  afterEach(() => {
+    vi.useRealTimers()
+    globalThis.fetch = originalFetch
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    })
+  })
+
+  it('stops retrying initial load and shows a backend unavailable error', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        setTimeout: globalThis.setTimeout.bind(globalThis),
+        clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      },
+    })
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    })
+
+    const chat = useChatSessions()
+    await chat.loadInitial()
+
+    while (vi.getTimerCount() > 0) {
+      await vi.runOnlyPendingTimersAsync()
+    }
+
+    expect(chat.loading.value).toBe(false)
+    expect(chat.projectsLoading.value).toBe(false)
+    expect(chat.error.value).toBe('Backend unavailable. Start or restart the Handa backend server, then retry.')
+    expect(chat.activeSession.value.title).toBe('Backend unavailable')
+    expect(chat.activeSession.value.messages[0]?.body).toContain('could not reach the backend')
+  })
+
   it('surfaces live-run edit precondition as an action error instead of a composer send error', async () => {
     const actionErrors: string[] = []
     const chat = useChatSessions({ onActionError: (message) => actionErrors.push(message) })

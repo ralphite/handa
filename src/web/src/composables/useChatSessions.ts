@@ -80,6 +80,8 @@ const PROJECT_QUERY_PARAM = 'project_id'
 const ARTIFACT_QUERY_PARAM = 'artifact'
 const INITIAL_LOAD_RETRY_BASE_MS = 350
 const INITIAL_LOAD_RETRY_MAX_MS = 2500
+const INITIAL_LOAD_TRANSIENT_RETRY_COUNT = 3
+const BACKEND_UNAVAILABLE_MESSAGE = 'Backend unavailable. Start or restart the Handa backend server, then retry.'
 const DETAIL_POLL_SETTLE_MS = 3500
 const INVOCATION_POLL_MS = 900
 const DETAIL_POLL_MS = 1800
@@ -136,7 +138,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
         : hasProjects.value
           ? 'Choose a project'
           : error.value
-            ? 'Unable to load projects'
+            ? 'Backend unavailable'
             : 'Add a project',
     createdAt: new Date().toISOString(),
     projectId: draftProject.value?.id ?? '',
@@ -156,7 +158,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
             : hasProjects.value
               ? 'Click the new button next to a project on the left to select it for this task.'
               : error.value
-                ? 'Handa could not load projects. Check the request error above, then retry once the server is available.'
+                ? 'Handa could not reach the backend. Start or restart the server, then use Retry to load projects and recent chats.'
                 : 'First add a project on the left, so Handa knows where this task should run.',
       },
     ],
@@ -266,14 +268,14 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       loading.value = false
     } catch (exc) {
       if (runId !== initialLoadRunId) return
-      if (isTransientInitialLoadError(exc)) {
+      if (isTransientInitialLoadError(exc) && initialLoadRetryCount < INITIAL_LOAD_TRANSIENT_RETRY_COUNT) {
         retryingInitialLoad.value = true
         error.value = ''
         scheduleInitialLoadRetry(runId)
         return
       }
       retryingInitialLoad.value = false
-      error.value = exc instanceof Error ? exc.message : String(exc)
+      error.value = initialLoadErrorMessage(exc)
       loading.value = false
     }
   }
@@ -1815,6 +1817,11 @@ function isTransientInitialLoadError(exc: unknown) {
   if (exc instanceof TypeError) return true
   if (!(exc instanceof Error)) return false
   return /Failed to fetch|Load failed|NetworkError|Request failed: (502|503|504)/i.test(exc.message)
+}
+
+function initialLoadErrorMessage(exc: unknown) {
+  if (isTransientInitialLoadError(exc)) return BACKEND_UNAVAILABLE_MESSAGE
+  return errorMessageFromUnknown(exc)
 }
 
 function errorMessageFromUnknown(exc: unknown): string {

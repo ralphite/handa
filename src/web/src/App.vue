@@ -839,6 +839,7 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
       :collapsed="effectiveLeftSideBarCollapsed"
       :has-projects="hasProjects"
       :projects-loading="projectsLoading"
+      :projects-error="error"
       :width="leftPanelWidth"
       :is-dragging="isDraggingLeft"
       :automated-tasks-active="automatedTasksOpen"
@@ -911,6 +912,7 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
           :project-name="activeProjectName"
           :loading="loading"
           :error="error"
+          :can-retry-load="Boolean(error) && !loading && !hasProjects"
           :send-error="sendError"
           :markdown-is-dark="themeIsDark"
           :agent-definitions="agentDefinitions"
@@ -942,6 +944,7 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
           @browser-interact="handleBrowserInteract"
           @browser-update="handleBrowserUpdate"
           @submit-user-input="submitUserInput"
+          @retry-load="loadInitial"
         />
 
         <div
