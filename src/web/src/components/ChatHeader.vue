@@ -298,7 +298,6 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
             :size="17"
           />
         </button>
-        <span class="project-launcher-divider" aria-hidden="true"></span>
         <button
           class="project-launcher-group-button project-launcher-menu-button"
           type="button"
@@ -369,7 +368,7 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
   height: 32px;
   align-items: center;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 58%, transparent);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 42%, transparent);
@@ -403,18 +402,11 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
 }
 
 .project-launcher-direct-button {
-  width: 38px;
+  width: 34px;
 }
 
 .project-launcher-menu-button {
-  width: 30px;
-}
-
-.project-launcher-divider {
-  width: 1px;
-  height: 20px;
-  flex-shrink: 0;
-  background: var(--border-subtle);
+  width: 26px;
 }
 
 .project-launcher-item {
