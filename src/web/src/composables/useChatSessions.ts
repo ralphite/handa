@@ -547,6 +547,14 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     modelConfigId?: string,
     existingSession?: AgentSession,
   ) {
+    logInvocationStartMessages({
+      payload,
+      projectId,
+      agentId,
+      reuseSessionId,
+      modelConfigId,
+      existingSession,
+    })
     const invocation = await createTurn(
       payload.prompt,
       projectId,
@@ -586,6 +594,57 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       setActiveSessionId(session.id)
     }
     pollInvocation(invocation.id)
+  }
+
+  function logInvocationStartMessages({
+    payload,
+    projectId,
+    agentId,
+    reuseSessionId,
+    modelConfigId,
+    existingSession,
+  }: {
+    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[]; goal?: boolean }
+    projectId: string
+    agentId: string
+    reuseSessionId?: string
+    modelConfigId?: string
+    existingSession?: AgentSession
+  }) {
+    const session = existingSession ?? sessions.value.find((item) => item.id === reuseSessionId) ?? null
+    console.log('[Handa] invocation start messages', {
+      sessionId: reuseSessionId ?? null,
+      projectId,
+      agentId,
+      modelConfigId: modelConfigId ?? null,
+      goal: Boolean(payload.goal),
+      messages: (session?.messages ?? []).map((message, index) => ({
+        index,
+        id: message.id,
+        role: message.role,
+        turnId: message.turnId ?? null,
+        invocationId: message.invocationId ?? null,
+        status: message.status ?? null,
+        body: message.body,
+        attachments: (message.attachments ?? []).map((attachment) => ({
+          id: attachment.id,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          byteCount: attachment.byteCount,
+          kind: attachment.kind,
+        })),
+      })),
+      outgoing: {
+        role: 'user',
+        body: payload.prompt,
+        files: payload.files.map((file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        })),
+        existingAttachmentIds: payload.existingAttachmentIds ?? [],
+      },
+    })
   }
 
   async function stopActiveInvocation() {

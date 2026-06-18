@@ -165,6 +165,7 @@ def goal_prompt_prefix(goal: dict[str, Any] | None) -> str:
       "Proof can be anything visible in the session: command results, "
       "observations, artifacts, file changes, child-agent results, or other "
       "concrete work.\n"
+      "A promise, plan, or status update is not a final answer.\n"
       "Do not claim completion without proof.\n\n"
       "# User Message\n"
   )

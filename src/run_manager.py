@@ -386,7 +386,11 @@ def _continuation_request(verdict: GoalJudgeVerdict) -> str:
   return (
       "The goal is not achieved yet.\n\n"
       f"Judge reason:\n{verdict.reason}\n\n"
-      f"{next_request}"
+      "# Required next action\n"
+      f"{next_request}\n\n"
+      "Do not respond with a promise or plan such as 'I will ...'. "
+      "Continue the missing work now and include concrete proof before finalizing. "
+      "Only stop if you are actually blocked, and explain the concrete blocker."
   )
 
 

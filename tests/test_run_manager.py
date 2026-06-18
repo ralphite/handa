@@ -218,6 +218,7 @@ def test_run_agent_invocation_injects_active_goal(tmp_path, monkeypatch):
   assert result.final_text == "done"
   assert "# Goal\nShip the login fix." in captured["prompt"]
   assert "This message is a Goal." in captured["prompt"]
+  assert "A promise, plan, or status update is not a final answer." in captured["prompt"]
   assert "Do not claim completion without proof." in captured["prompt"]
   assert captured["prompt"].endswith("# User Message\nWhat next?")
 
@@ -296,7 +297,10 @@ def test_goal_judge_continue_runs_next_attempt_in_same_invocation(tmp_path, monk
   assert len(prompts) == 2
   assert prompts[0].endswith("# User Message\nMake the command return true.")
   assert "The goal is not achieved yet." in prompts[1]
+  assert "# Required next action" in prompts[1]
   assert "Run the command again and show the result." in prompts[1]
+  assert "Do not respond with a promise or plan" in prompts[1]
+  assert "Continue the missing work now" in prompts[1]
   assert [event["kind"] for event in events].count("goal_judge_verdict") == 2
   assert [event["kind"] for event in events].count("goal_continue") == 1
   assert [event["kind"] for event in events].count("goal_attempt_started") == 2
