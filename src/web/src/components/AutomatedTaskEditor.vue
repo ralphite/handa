@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   save: [payload: AutomatedTaskFormPayload]
   cancel: []
+  nameChange: [name: string]
 }>()
 
 export interface AutomatedTaskFormPayload {
@@ -97,6 +98,14 @@ watch(
     selectedModelConfigId.value = task?.model_config_id ?? props.defaultModelConfigId
     draftText.value = task?.prompt ?? ''
     triggers.value = (task?.triggers ?? []).map(fromTriggerConfig)
+  },
+  { immediate: true },
+)
+
+watch(
+  taskName,
+  (name) => {
+    emit('nameChange', name.trim())
   },
   { immediate: true },
 )
@@ -179,7 +188,7 @@ const labelClass = 'mb-1.5 block text-[13px] font-medium text-[color:var(--text-
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-[920px] flex-col gap-5">
+  <div class="mx-auto flex w-full max-w-[820px] flex-col gap-5">
     <div class="flex items-center justify-between">
       <h1 class="text-[20px] font-semibold tracking-normal text-[color:var(--text-primary)]">
         {{ isEditing ? 'Edit automated task' : 'New automated task' }}

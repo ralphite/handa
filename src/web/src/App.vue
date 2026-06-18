@@ -14,6 +14,8 @@ import { getAgentContextUsage } from './api/client'
 import type { BackendAgentContextUsage, BackendContextUsageBreakdownItem } from './api/types'
 import { useChatSessions } from './composables/useChatSessions'
 import { useThemeSettings } from './composables/useThemeSettings'
+import { automatedTasksPathFor, parseAutomatedTasksRoute } from './presenters/automatedTasksRoute'
+import type { AutomatedTasksRoute } from './presenters/automatedTasksRoute'
 import { formatWorkDuration, parseDurationToSeconds } from './presenters/duration'
 import type { AgentBrowserEnvironment, Artifact, BrowserInteraction, ContextUsageBreakdownItem, ContextUsageSummary, EditMessagePayload, MessageAttachment, SendPromptPayload } from './types'
 
@@ -28,7 +30,11 @@ let toastSeq = 0
 const ARTIFACT_QUERY_PARAM = 'artifact'
 const DIALOG_QUERY_PARAM = 'dialog'
 const SETTINGS_SECTION_QUERY_PARAM = 'settings_section'
-const RESTORABLE_DIALOGS = ['settings', 'automated-tasks', 'search'] as const
+const SESSION_QUERY_PARAM = 'session_id'
+const LEGACY_SESSION_QUERY_PARAM = 'thread_id'
+const NEW_CHAT_QUERY_PARAM = 'new_chat'
+const PROJECT_QUERY_PARAM = 'project_id'
+const RESTORABLE_DIALOGS = ['settings', 'search'] as const
 type RestorableDialog = (typeof RESTORABLE_DIALOGS)[number]
 const SETTINGS_SECTIONS: SettingsSection[] = ['theme', 'gemini-api-key', 'archived-chats']
 
@@ -99,7 +105,7 @@ const leftSideBarExpandedOnNarrow = ref(false)
 const activeArtifactId = ref('')
 
 const settingsOpen = ref(false)
-const automatedTasksOpen = ref(false)
+const automatedTasksRoute = ref<AutomatedTasksRoute>(readAutomatedTasksRoute())
 const searchOpen = ref(false)
 const settingsInitialSection = ref<SettingsSection>('theme')
 const archivedOpen = ref(false) // Wait, we don't need archivedOpen as a main view state anymore.
@@ -136,6 +142,16 @@ const sidebarProgressItems = computed<SidebarProgressItem[]>(() => activeSession
 
 const activeBrowserEnvironment = computed(() => activeSession.value.browserEnvironment ?? null)
 const activeBrowserPanel = computed(() => browserPreviewOpen.value ? activeBrowserEnvironment.value : null)
+
+const automatedTasksOpen = computed(() => automatedTasksRoute.value.kind !== 'none')
+const automatedTasksMode = computed<'list' | 'new' | 'edit'>(() => {
+  if (automatedTasksRoute.value.kind === 'new') return 'new'
+  if (automatedTasksRoute.value.kind === 'edit') return 'edit'
+  return 'list'
+})
+const automatedTasksTaskId = computed(() =>
+  automatedTasksRoute.value.kind === 'edit' ? automatedTasksRoute.value.taskId : undefined,
+)
 
 const sidebarUsage = computed<ContextUsageSummary>(() => {
   let totalTokens = 0
@@ -176,6 +192,7 @@ const sidebarUsage = computed<ContextUsageSummary>(() => {
 })
 
 const activeNavigationSessionId = computed(() => {
+  if (automatedTasksOpen.value) return ''
   return activeSession.value.parentSessionId
     ? (activeSession.value.rootSessionId ?? activeSessionId.value)
     : activeSessionId.value
@@ -195,6 +212,7 @@ const activeSessionDraftAttachments = computed(() => {
 
 async function handleNewSession(projectId: string) {
   archivedOpen.value = false
+  leaveAutomatedTasksRoute()
   closeRightPanel()
   await newSession(projectId)
 }
@@ -221,6 +239,7 @@ function handleActiveSessionDraftAttachmentsUpdate(attachments: MessageAttachmen
 
 function handleSelectSession(id: string) {
   archivedOpen.value = false
+  leaveAutomatedTasksRoute()
   closeRightPanel()
   void selectSession(id)
 }
@@ -228,6 +247,7 @@ function handleSelectSession(id: string) {
 function handleSelectBreadcrumb(id: string) {
   if (id.startsWith('project:')) return
   archivedOpen.value = false
+  leaveAutomatedTasksRoute()
   closeRightPanel()
   if (id !== activeSession.value.id) void selectSession(id)
 }
@@ -236,6 +256,7 @@ function handleSelectBackgroundRun(id: string) {
   const run = sidebarBackgroundRuns.value.find((item) => item.id === id)
   if (!run?.childSessionId) return
   archivedOpen.value = false
+  leaveAutomatedTasksRoute()
   closeRightPanel()
   void selectSession(run.childSessionId)
 }
@@ -244,6 +265,7 @@ function handleSelectParentSession() {
   const parentSessionId = activeSession.value.parentSessionId
   if (!parentSessionId) return
   archivedOpen.value = false
+  leaveAutomatedTasksRoute()
   closeRightPanel()
   void selectSession(parentSessionId)
 }
@@ -331,7 +353,7 @@ function handleForkSession(sourceTurnId?: string, options?: { includeSourceTurn?
 const effectiveLeftSideBarCollapsed = computed(() =>
   isNarrowViewport.value ? !leftSideBarExpandedOnNarrow.value : leftSideBarCollapsed.value,
 )
-const showNewChatPage = computed(() => Boolean(draftProjectId.value))
+const showNewChatPage = computed(() => !automatedTasksOpen.value && Boolean(draftProjectId.value))
 
 // New chat has no runtime usage yet; preview the static prompt (instruction,
 // tools, skills, project config) so the context ring still opens for debugging.
@@ -415,7 +437,7 @@ const rightSidebarHidden = computed(() => {
   return !rightSidebarAutoOpened.has(activeSessionId.value)
 })
 const showRightSidebar = computed(() =>
-  !showNewChatPage.value && (isNarrowViewport.value ? rightSidebarOpenOnNarrow.value : !rightSidebarHidden.value),
+  !automatedTasksOpen.value && !showNewChatPage.value && (isNarrowViewport.value ? rightSidebarOpenOnNarrow.value : !rightSidebarHidden.value),
 )
 
 function toggleLeftSideBar() {
@@ -450,11 +472,22 @@ function handleSettingsSectionUpdate(section: SettingsSection) {
 }
 
 function openAutomatedTasks() {
-  setRestorableDialog('automated-tasks')
+  archivedOpen.value = false
+  closeRightPanel()
+  applyRestorableDialog('')
+  setAutomatedTasksRoute({ kind: 'list' })
 }
 
-function closeAutomatedTasks() {
-  closeRestorableDialog('automated-tasks')
+function openAutomatedTasksList() {
+  setAutomatedTasksRoute({ kind: 'list' })
+}
+
+function openNewAutomatedTask() {
+  setAutomatedTasksRoute({ kind: 'new' })
+}
+
+function openAutomatedTask(taskId: string) {
+  setAutomatedTasksRoute({ kind: 'edit', taskId })
 }
 
 function openSearch() {
@@ -534,10 +567,13 @@ onMounted(() => {
   window.addEventListener('popstate', syncSessionFromUrl)
   window.addEventListener('popstate', syncArtifactFromUrl)
   window.addEventListener('popstate', syncDialogFromUrl)
+  window.addEventListener('popstate', syncAutomatedTasksRoute)
+  syncAutomatedTasksRoute()
   syncDialogFromUrl()
   void loadTheme()
   void loadInitial().then(() => {
     syncArtifactFromUrl()
+    syncAutomatedTasksRoute()
     syncDialogFromUrl()
   })
 })
@@ -547,6 +583,7 @@ onUnmounted(() => {
   window.removeEventListener('popstate', syncSessionFromUrl)
   window.removeEventListener('popstate', syncArtifactFromUrl)
   window.removeEventListener('popstate', syncDialogFromUrl)
+  window.removeEventListener('popstate', syncAutomatedTasksRoute)
   stopPolling()
   stopBrowserRefreshPolling()
   for (const timer of toastTimers.values()) {
@@ -715,6 +752,61 @@ function formatTokenLimit(count: number) {
   return String(count)
 }
 
+function readAutomatedTasksRoute(): AutomatedTasksRoute {
+  if (typeof window === 'undefined') return { kind: 'none' }
+  return parseAutomatedTasksRoute(window.location.pathname)
+}
+
+function syncAutomatedTasksRoute() {
+  const route = readAutomatedTasksRoute()
+  automatedTasksRoute.value = route
+  if (route.kind !== 'none') {
+    activeArtifactId.value = ''
+    browserPreviewOpen.value = false
+    rightSidebarOpenOnNarrow.value = false
+    applyRestorableDialog('')
+    writeAutomatedTasksRouteToUrl(route, 'replace')
+  }
+}
+
+function setAutomatedTasksRoute(route: Exclude<AutomatedTasksRoute, { kind: 'none' }>) {
+  automatedTasksRoute.value = route
+  writeAutomatedTasksRouteToUrl(route, 'push')
+}
+
+function leaveAutomatedTasksRoute() {
+  if (!automatedTasksOpen.value) return
+  automatedTasksRoute.value = { kind: 'none' }
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  if (parseAutomatedTasksRoute(url.pathname).kind === 'none') return
+  url.pathname = '/'
+  const next = `${url.pathname}${url.search}${url.hash}`
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  if (next !== current) window.history.replaceState({}, '', next)
+}
+
+function writeAutomatedTasksRouteToUrl(
+  route: Exclude<AutomatedTasksRoute, { kind: 'none' }>,
+  historyMode: 'push' | 'replace',
+) {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  url.pathname = automatedTasksPathFor(route)
+  url.searchParams.delete(SESSION_QUERY_PARAM)
+  url.searchParams.delete(LEGACY_SESSION_QUERY_PARAM)
+  url.searchParams.delete(NEW_CHAT_QUERY_PARAM)
+  url.searchParams.delete(PROJECT_QUERY_PARAM)
+  url.searchParams.delete(ARTIFACT_QUERY_PARAM)
+  url.searchParams.delete(DIALOG_QUERY_PARAM)
+  url.searchParams.delete(SETTINGS_SECTION_QUERY_PARAM)
+  const next = `${url.pathname}${url.search}${url.hash}`
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`
+  if (next === current) return
+  if (historyMode === 'replace') window.history.replaceState({}, '', next)
+  else window.history.pushState({}, '', next)
+}
+
 function readArtifactIdFromUrl() {
   if (typeof window === 'undefined') return ''
   return new URL(window.location.href).searchParams.get(ARTIFACT_QUERY_PARAM) ?? ''
@@ -770,7 +862,6 @@ function closeRestorableDialog(dialog: RestorableDialog) {
 
 function applyRestorableDialog(dialog: RestorableDialog | '') {
   settingsOpen.value = dialog === 'settings'
-  automatedTasksOpen.value = dialog === 'automated-tasks'
   searchOpen.value = dialog === 'search'
 }
 
@@ -786,7 +877,6 @@ function isSettingsSection(value: string | null): value is SettingsSection {
 
 function isDialogOpen(dialog: RestorableDialog) {
   if (dialog === 'settings') return settingsOpen.value
-  if (dialog === 'automated-tasks') return automatedTasksOpen.value
   return searchOpen.value
 }
 
@@ -870,6 +960,21 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
       @update-draft-text="handleNewChatDraftTextUpdate"
       @dictation-error="handleDictationError"
       @optimize-error="showErrorToast"
+    />
+
+    <AutomatedTasksPage
+      v-else-if="automatedTasksOpen"
+      :mode="automatedTasksMode"
+      :task-id="automatedTasksTaskId"
+      :projects="projects"
+      :agent-definitions="agentDefinitions"
+      :model-configs="modelConfigs"
+      :default-model-config-id="modelConfigId"
+      @navigate-list="openAutomatedTasksList"
+      @navigate-new="openNewAutomatedTask"
+      @navigate-task="openAutomatedTask"
+      @open-session="handleSelectSession"
+      @error="showErrorToast"
     />
 
     <div v-else class="relative flex min-w-0 flex-1 flex-col bg-background text-foreground">
@@ -978,17 +1083,6 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
       @update-gemini-api-key="setGeminiApiKey"
       @unarchive-session="unarchiveSession"
       @delete-session="deleteSessionById"
-    />
-
-    <AutomatedTasksPage
-      :open="automatedTasksOpen"
-      :projects="projects"
-      :agent-definitions="agentDefinitions"
-      :model-configs="modelConfigs"
-      :default-model-config-id="modelConfigId"
-      @close="closeAutomatedTasks"
-      @open-session="handleSelectSession"
-      @error="showErrorToast"
     />
 
     <ToastStack :toasts="toasts" @dismiss="dismissToast" />

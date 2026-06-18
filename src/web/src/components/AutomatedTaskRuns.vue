@@ -38,7 +38,7 @@ function formatTime(value: string): string {
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-[640px] flex-col gap-4">
+  <div class="mx-auto flex w-full max-w-[820px] flex-col gap-4">
     <div class="flex items-center justify-between">
       <button type="button" class="back-btn" @click="emit('back')">
         <ArrowLeft :size="16" /> Back
