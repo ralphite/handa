@@ -517,13 +517,13 @@ onUnmounted(() => {
       <div v-if="!collapsed" class="flex min-w-0 flex-1 items-center gap-2">
         <span
           class="truncate text-[18px] tracking-normal text-[color:var(--text-primary)]"
-          >Handa</span
+          >h&amp;a orca</span
         >
       </div>
       <button
         class="grid h-8 w-8 place-items-center rounded-lg text-[color:var(--text-muted)] transition hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
         :class="
-          collapsed ? 'mx-auto cursor-e-resize' : 'ml-auto cursor-w-resize'
+          collapsed ? 'mx-auto cursor-e-resize' : 'ml-auto -mr-2.5 cursor-w-resize'
         "
         type="button"
         :aria-label="collapsed ? 'Open sidebar' : 'Close sidebar'"
