@@ -89,6 +89,7 @@ const COMPOSER_TEXTAREA_MAX_HEIGHT = 240
 const SLASH_COMMAND_ICONS: Record<SlashCommandKind, Component> = {
   model: Box,
   goal: Target,
+  optimize: Sparkles,
 }
 
 const draft = ref(props.draftText ?? '')
@@ -407,9 +408,25 @@ const canUndoOptimize = computed(() => {
   return draftBeforeOptimize.value !== null && draft.value === lastOptimizedText.value
 })
 
+// Replace the whole draft through a native, undoable edit so the browser records
+// it on the textarea's own undo stack — letting cmd+z / shift+cmd+z step across
+// an optimize rewrite. A plain `draft.value = ...` assignment wipes that stack,
+// leaving nothing to undo. `execCommand('insertText')` fires an `input` event, so
+// v-model keeps `draft` in sync; we only assign directly on the fallback path
+// (no textarea mounted, or the command unsupported).
+function replaceDraftUndoable(text: string) {
+  const textarea = textareaRef.value
+  if (textarea) {
+    textarea.focus()
+    textarea.setSelectionRange(0, textarea.value.length)
+    if (document.execCommand('insertText', false, text)) return
+  }
+  draft.value = text
+}
+
 async function handleOptimizeClick() {
   if (canUndoOptimize.value) {
-    draft.value = draftBeforeOptimize.value ?? ''
+    replaceDraftUndoable(draftBeforeOptimize.value ?? '')
     draftBeforeOptimize.value = null
     focusInput()
     return
@@ -422,7 +439,7 @@ async function handleOptimizeClick() {
   if (draft.value !== original) return
   draftBeforeOptimize.value = original
   lastOptimizedText.value = optimized
-  draft.value = optimized
+  replaceDraftUndoable(optimized)
   focusInput()
 }
 
@@ -723,9 +740,14 @@ function refreshSlashMenu() {
     closeSlashMenu()
     return
   }
-  const matches = filterSlashCommands(token.query).filter((command) => (
-    props.goalCommandEnabled || command.kind !== 'goal'
-  ))
+  // Commands flagged `requiresLeadingText` (e.g. optimize) only make sense when
+  // there is real prompt text before the slash to act on.
+  const hasLeadingText = draft.value.slice(0, token.start).trim().length > 0
+  const matches = filterSlashCommands(token.query).filter((command) => {
+    if (command.kind === 'goal' && !props.goalCommandEnabled) return false
+    if (command.requiresLeadingText && !hasLeadingText) return false
+    return true
+  })
   if (matches.length === 0) {
     closeSlashMenu()
     return
@@ -762,6 +784,12 @@ function runSlashCommand(command: SlashCommand) {
     draftGoal.value = true
     closeSlashMenu()
     focusInput()
+  } else if (command.kind === 'optimize') {
+    // Drop the `/optimize` token, then run the exact same path as the optimize
+    // button so the rewrite acts on the surrounding prompt text alone.
+    replaceActiveSlashToken()
+    closeSlashMenu()
+    void handleOptimizeClick()
   }
 }
 

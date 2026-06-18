@@ -39,7 +39,7 @@ describe('slashTokenAt', () => {
 
 describe('filterSlashCommands', () => {
   it('returns every command for an empty query, ordered alphabetically', () => {
-    expect(filterSlashCommands('').map((command) => command.id)).toEqual(['goal', 'model'])
+    expect(filterSlashCommands('').map((command) => command.id)).toEqual(['goal', 'model', 'optimize'])
   })
 
   it('keeps the Goal command detail copy stable', () => {
@@ -55,6 +55,13 @@ describe('filterSlashCommands', () => {
   it('matches by alias', () => {
     expect(filterSlashCommands('models').map((command) => command.id)).toContain('model')
     expect(filterSlashCommands('objective').map((command) => command.id)).toContain('goal')
+    expect(filterSlashCommands('improve').map((command) => command.id)).toContain('optimize')
+  })
+
+  it('flags optimize as requiring leading prompt text', () => {
+    const optimize = SLASH_COMMANDS.find((command) => command.id === 'optimize')
+    expect(optimize?.requiresLeadingText).toBe(true)
+    expect(SLASH_COMMANDS.find((command) => command.id === 'model')?.requiresLeadingText).toBeUndefined()
   })
 
   it('returns nothing for an unknown token', () => {

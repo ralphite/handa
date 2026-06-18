@@ -9,7 +9,7 @@
 // ...) can be added without touching the menu UI. `kind` tells the composer how
 // a chosen command resolves.
 
-export type SlashCommandKind = 'model' | 'goal'
+export type SlashCommandKind = 'model' | 'goal' | 'optimize'
 
 export interface SlashCommand {
   /** Stable identity used for keys and analytics. */
@@ -22,6 +22,12 @@ export interface SlashCommand {
   description: string
   /** Extra tokens that should also match this command. */
   aliases?: string[]
+  /**
+   * Only offer the command when the draft already has non-whitespace text
+   * before the slash — e.g. `optimize`, which rewrites the existing prompt and
+   * is meaningless on an empty composer.
+   */
+  requiresLeadingText?: boolean
   /** How the composer resolves the command once chosen. */
   kind: SlashCommandKind
 }
@@ -42,6 +48,15 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     description: 'Switch the active model',
     aliases: ['models'],
     kind: 'model',
+  },
+  {
+    id: 'optimize',
+    name: 'optimize',
+    title: 'Optimize Prompt',
+    description: 'Rewrite the current prompt to be clearer',
+    aliases: ['optimise', 'improve', 'enhance'],
+    requiresLeadingText: true,
+    kind: 'optimize',
   },
 ]
 
