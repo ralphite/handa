@@ -270,45 +270,48 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
         v-tooltip="{ content: session.title, overflowOnly: true }"
       >{{ session.title }}</h1>
     </div>
-    <div ref="projectLauncherRef" class="relative flex shrink-0 items-center gap-0.5">
-      <button
-        class="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)] disabled:cursor-wait disabled:opacity-70"
-        type="button"
-        :disabled="Boolean(launcherBusyTarget)"
-        :aria-label="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
-        v-tooltip="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
-        @click.stop="openProjectLauncherTarget(lastLauncherTarget)"
-      >
-        <Loader2
-          v-if="launcherBusyTarget === lastLauncherTarget"
-          class="animate-spin"
-          :size="17"
-        />
-        <img
-          v-else-if="launcherIconAvailable[lastLauncherTarget]"
-          class="project-launcher-direct-icon"
-          :src="projectLauncherIconUrl(lastLauncherTarget)"
-          alt=""
-          @error="markLauncherIconUnavailable(lastLauncherTarget)"
-        />
-        <component
-          :is="launcherTargetFallbackIcon(lastLauncherTarget)"
-          v-else
-          :size="17"
-        />
-      </button>
-      <button
-        class="inline-flex h-8 w-7 items-center justify-center rounded-md text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)] disabled:cursor-wait disabled:opacity-70"
-        type="button"
-        aria-haspopup="menu"
-        :aria-expanded="launcherOpen"
-        :disabled="Boolean(launcherBusyTarget)"
-        aria-label="Choose app to open project"
-        v-tooltip="'Choose app'"
-        @click.stop="toggleProjectLauncher"
-      >
-        <ChevronDown :size="15" />
-      </button>
+    <div ref="projectLauncherRef" class="relative shrink-0">
+      <div class="project-launcher-group" data-testid="project-launcher-group">
+        <button
+          class="project-launcher-group-button project-launcher-direct-button"
+          type="button"
+          :disabled="Boolean(launcherBusyTarget)"
+          :aria-label="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
+          v-tooltip="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
+          @click.stop="openProjectLauncherTarget(lastLauncherTarget)"
+        >
+          <Loader2
+            v-if="launcherBusyTarget === lastLauncherTarget"
+            class="animate-spin"
+            :size="17"
+          />
+          <img
+            v-else-if="launcherIconAvailable[lastLauncherTarget]"
+            class="project-launcher-direct-icon"
+            :src="projectLauncherIconUrl(lastLauncherTarget)"
+            alt=""
+            @error="markLauncherIconUnavailable(lastLauncherTarget)"
+          />
+          <component
+            :is="launcherTargetFallbackIcon(lastLauncherTarget)"
+            v-else
+            :size="17"
+          />
+        </button>
+        <span class="project-launcher-divider" aria-hidden="true"></span>
+        <button
+          class="project-launcher-group-button project-launcher-menu-button"
+          type="button"
+          aria-haspopup="menu"
+          :aria-expanded="launcherOpen"
+          :disabled="Boolean(launcherBusyTarget)"
+          aria-label="Choose app to open project"
+          v-tooltip="'Choose app'"
+          @click.stop="toggleProjectLauncher"
+        >
+          <ChevronDown :size="15" />
+        </button>
+      </div>
       <Transition name="project-launcher">
         <div
           v-if="launcherOpen"
@@ -361,6 +364,59 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
 </template>
 
 <style scoped>
+.project-launcher-group {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 42%, transparent);
+}
+
+.project-launcher-group-button {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.project-launcher-group-button:hover,
+.project-launcher-group-button:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.project-launcher-group-button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.project-launcher-group-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.project-launcher-direct-button {
+  width: 38px;
+}
+
+.project-launcher-menu-button {
+  width: 30px;
+}
+
+.project-launcher-divider {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--border-subtle);
+}
+
 .project-launcher-item {
   display: flex;
   height: 32px;
