@@ -11,6 +11,7 @@ import {
   Pencil,
   RotateCcw,
   Split,
+  Target,
 } from '@lucide/vue'
 import { MarkdownRender, enableMermaid } from 'markstream-vue'
 import 'markstream-vue/index.css'
@@ -24,6 +25,7 @@ import UserInputForm from './UserInputForm.vue'
 import type { BackendAgentDefinition, BackendModelConfigOption } from '../api/types'
 import { DEFAULT_AGENT_ID } from '../agentDefaults'
 import { LIVE_MARKDOWN_RENDER_PROPS, STATIC_MARKDOWN_RENDER_PROPS } from '../markdownStreamProps'
+import { isSessionGoalMessage } from '../presenters/messageGoal'
 import { timelineItemsWithoutDuplicateFinalText } from '../presenters/timelineDisplay'
 import type { AgentBrowserEnvironment, AgentMessage, AgentSession, Artifact, BrowserInteraction, ContextUsageSummary, EditMessagePayload, MessageAttachment, PendingUserMessage, SendPromptPayload, UserInputSubmissionPayload } from '../types'
 
@@ -887,6 +889,14 @@ function cancelUserInput(payload: { requestId: string; turnId: string }) {
                   </template>
                 </div>
                 <template v-if="message.role === 'user'">
+                  <div
+                    v-if="isSessionGoalMessage(session, message)"
+                    class="mb-2 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 text-[color:var(--user-message-fg)] opacity-70"
+                    data-testid="message-goal-chip"
+                  >
+                    <Target :size="14" class="shrink-0" />
+                    <span>Goal</span>
+                  </div>
                   <p
                     :ref="(el) => setUserMessageBodyRef(message.id, el)"
                     class="user-message-body whitespace-pre-wrap"
