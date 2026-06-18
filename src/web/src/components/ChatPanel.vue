@@ -902,7 +902,7 @@ function cancelUserInput(payload: { requestId: string; turnId: string }) {
                 <template v-if="message.role === 'user'">
                   <div
                     v-if="isSessionGoalMessage(session, message)"
-                    class="mb-2 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 text-[12px] leading-4 text-[color:var(--user-message-fg)] opacity-70"
+                    class="mb-2 inline-flex h-6 items-center gap-1.5 rounded-md text-[12px] leading-4 text-[color:var(--user-message-fg)] opacity-70"
                     data-testid="message-goal-chip"
                   >
                     <Target :size="14" class="shrink-0" />
