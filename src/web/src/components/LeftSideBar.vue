@@ -560,8 +560,8 @@ onUnmounted(() => {
           class="nav-icon"
           :class="{ 'bg-[var(--surface-active)] !text-[color:var(--text-primary)]': automatedTasksActive }"
           type="button"
-          v-tooltip="'Automated Tasks'"
-          aria-label="Automated Tasks"
+          v-tooltip="'Automated tasks'"
+          aria-label="Automated tasks"
           @click="emit('openAutomatedTasks')"
         >
           <Clock :size="18" />
@@ -601,7 +601,7 @@ onUnmounted(() => {
           @click="emit('openAutomatedTasks')"
         >
           <Clock :size="16" />
-          <span class="truncate">Automated Tasks</span>
+          <span class="truncate">Automated tasks</span>
         </button>
         <button
           v-if="workflowsEnabled"

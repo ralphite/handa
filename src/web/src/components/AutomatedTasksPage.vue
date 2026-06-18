@@ -268,7 +268,7 @@ function showNotice(text: string) {
       @click.stop
     >
       <header class="flex h-14 shrink-0 items-center gap-2 border-b border-[color:var(--border-muted)] px-5">
-        <span id="automated-tasks-title" class="text-[15px] font-semibold">Automated Tasks</span>
+        <span id="automated-tasks-title" class="text-[15px] font-semibold">Automated tasks</span>
         <button type="button" class="icon-button ml-auto h-8 w-8" aria-label="Close" @click="emit('close')">
           <X :size="16" />
         </button>
