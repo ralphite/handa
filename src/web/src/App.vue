@@ -14,6 +14,7 @@ import { getAgentContextUsage } from './api/client'
 import type { BackendAgentContextUsage, BackendContextUsageBreakdownItem } from './api/types'
 import { useChatSessions } from './composables/useChatSessions'
 import { useThemeSettings } from './composables/useThemeSettings'
+import { formatWorkDuration, parseDurationToSeconds } from './presenters/duration'
 import type { AgentBrowserEnvironment, Artifact, BrowserInteraction, ContextUsageBreakdownItem, ContextUsageSummary, EditMessagePayload, MessageAttachment, SendPromptPayload } from './types'
 
 interface ToastItem {
@@ -150,7 +151,7 @@ const sidebarUsage = computed<ContextUsageSummary>(() => {
       if (message.tokenUsage.input > 0) contextTokens = message.tokenUsage.input
     }
     toolCalls += (message.detailEvents ?? []).filter((event) => event.kind === 'tool_call').length
-    agentSeconds += message.activeSeconds ?? parseElapsedToSeconds(message.elapsed)
+    agentSeconds += message.activeSeconds ?? parseDurationToSeconds(message.elapsed)
   }
   const modelConfig =
     modelConfigs.value.find((config) => config.id === activeSession.value.latestModelConfigId) ??
@@ -170,7 +171,7 @@ const sidebarUsage = computed<ContextUsageSummary>(() => {
     outputTokens: formatTokens(outputTokens),
     outputTokenCount: outputTokens,
     toolCalls,
-    agentTime: formatDuration(agentSeconds),
+    agentTime: formatWorkDuration(agentSeconds),
   }
 })
 
@@ -712,27 +713,6 @@ function formatTokenLimit(count: number) {
   if (count >= 1_000_000) return `${Math.round(count / 1_000_000)}M`
   if (count >= 1_000) return `${Math.round(count / 1_000)}K`
   return String(count)
-}
-
-function parseElapsedToSeconds(text?: string) {
-  if (!text) return 0
-  let seconds = 0
-  const hours = text.match(/(\d+)\s*h/)
-  if (hours) seconds += Number(hours[1]) * 3600
-  const minutes = text.match(/(\d+)\s*m/)
-  if (minutes) seconds += Number(minutes[1]) * 60
-  const secs = text.match(/(\d+)\s*s/)
-  if (secs) seconds += Number(secs[1])
-  return seconds
-}
-
-function formatDuration(totalSeconds: number) {
-  const total = Math.max(0, Math.round(totalSeconds))
-  if (total < 60) return `${total}s`
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`
-  return `${minutes}m ${String(total % 60).padStart(2, '0')}s`
 }
 
 function readArtifactIdFromUrl() {

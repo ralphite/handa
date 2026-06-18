@@ -69,6 +69,7 @@ import type {
   UserInputSubmissionPayload,
 } from '../types'
 import { DEFAULT_AGENT_ID } from '../agentDefaults'
+import { formatWorkDuration } from '../presenters/duration'
 import { toolResponsePayloadIndicatesFailedOutcome } from '../presenters/toolDisplay'
 import { removeDuplicateFinalProcessText } from '../presenters/timelineDisplay'
 
@@ -632,7 +633,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     if (!deferStatusPromotion) {
       session.latestInvocationId = invocation.id
       session.status = invocationStatus
-      session.elapsed = formatWorkSeconds(invocationActiveSeconds(invocation))
+      session.elapsed = formatWorkDuration(invocationActiveSeconds(invocation))
       session.detailEvents = []
     }
     session.latestModelConfigId = invocation.model_config_id ?? session.latestModelConfigId
@@ -643,7 +644,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     session.lastActivityAt = invocation.updated_at ?? assistantCreatedAtFromInvocation(invocation)
     session.attention = undefined
     const invocationActive = invocationActiveSeconds(invocation)
-    const invocationElapsed = formatWorkSeconds(invocationActive)
+    const invocationElapsed = formatWorkDuration(invocationActive)
     const messages: AgentMessage[] = []
     if (shouldShowInvocationInput(invocation)) {
       messages.push({
@@ -1415,7 +1416,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   function sessionFromInvocation(invocation: BackendTurn, project: BackendProject, agentId: string): AgentSession {
     const status = statusFromInvocation(invocation.status)
     const activeSeconds = invocationActiveSeconds(invocation)
-    const elapsedText = formatWorkSeconds(activeSeconds)
+    const elapsedText = formatWorkDuration(activeSeconds)
     const definition = agentDefinitionById(agentId)
     return {
       id: invocation.session_id,
@@ -1558,7 +1559,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     const assistant = assistantMessageFor(session, invocation.id)
     if (assistant) {
       assistant.activeSeconds = invocationActiveSeconds(invocation)
-      assistant.elapsed = formatWorkSeconds(assistant.activeSeconds)
+      assistant.elapsed = formatWorkDuration(assistant.activeSeconds)
       assistant.status = nextStatus
       assistant.triggerKind = invocation.trigger_kind
       assistant.systemRunLabel = invocation.system_run_label ?? undefined
@@ -1583,7 +1584,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     if (!owner || owner.invocationId === invocation.id) {
       session.status = nextStatus
       session.latestInvocationId = invocation.id
-      session.elapsed = formatWorkSeconds(invocationActiveSeconds(invocation))
+      session.elapsed = formatWorkDuration(invocationActiveSeconds(invocation))
     } else {
       session.status = owner.status
       session.latestInvocationId = owner.invocationId
@@ -2349,7 +2350,7 @@ function elapsed(start: string, end?: string | null): string {
   const startMs = Date.parse(start)
   const endMs = end ? Date.parse(end) : Date.now()
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return '0s'
-  return formatWorkSeconds(Math.max(0, (endMs - startMs) / 1000))
+  return formatWorkDuration(Math.max(0, (endMs - startMs) / 1000))
 }
 
 // Agent working time in seconds, excluding spans the turn was paused on the
@@ -2363,17 +2364,6 @@ function invocationActiveSeconds(invocation: BackendTurn): number {
   const endMs = endIso ? Date.parse(endIso) : Date.now()
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return 0
   return Math.max(0, (endMs - startMs) / 1000)
-}
-
-// `1h 02m` past an hour, `2m 05s` past a minute, else `45s` — so a turn that
-// ran for hours never collapses into a misleading `464m`.
-function formatWorkSeconds(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds))
-  if (total < 60) return `${total}s`
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`
-  return `${minutes}m ${String(total % 60).padStart(2, '0')}s`
 }
 
 function tokenUsageFromInvocation(invocation: BackendTurn): InvocationTokenUsage {
