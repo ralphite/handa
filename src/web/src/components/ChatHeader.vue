@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
-  AppWindowMac,
   ChevronDown,
   Code,
   FolderOpen,
@@ -42,6 +41,12 @@ const launcherIconAvailable = ref<Record<BackendProjectLauncherTarget, boolean>>
   finder: true,
   vscode: true,
 })
+const launcherTargets = [
+  { id: 'vscode', label: 'VS Code', fallbackIcon: Code },
+  { id: 'finder', label: 'Finder', fallbackIcon: FolderOpen },
+] as const
+const lastLauncherStorageKey = 'handa.projectLauncher.lastTarget'
+const lastLauncherTarget = ref<BackendProjectLauncherTarget>(readLastLauncherTarget())
 
 const artifactLabel = computed(() => props.activeArtifact?.filename ?? props.activeArtifact?.title ?? '')
 const activeArtifactIcon = computed(() => props.activeArtifact ? artifactIconFor(props.activeArtifact) : null)
@@ -93,6 +98,7 @@ async function openProjectLauncherTarget(target: BackendProjectLauncherTarget) {
   launcherBusyTarget.value = target
   try {
     await launchProjectApp(props.session.projectId, target)
+    saveLastLauncherTarget(target)
     closeProjectLauncher()
   } catch (error) {
     emit('launcherError', readableError(error))
@@ -108,6 +114,36 @@ function readableError(error: unknown) {
 
 function markLauncherIconUnavailable(target: BackendProjectLauncherTarget) {
   launcherIconAvailable.value[target] = false
+}
+
+function launcherTargetLabel(target: BackendProjectLauncherTarget) {
+  return launcherTargets.find((item) => item.id === target)?.label ?? 'Project app'
+}
+
+function launcherTargetFallbackIcon(target: BackendProjectLauncherTarget) {
+  return launcherTargets.find((item) => item.id === target)?.fallbackIcon ?? Code
+}
+
+function readLastLauncherTarget(): BackendProjectLauncherTarget {
+  if (typeof window === 'undefined') return 'vscode'
+  let stored: string | null = null
+  try {
+    stored = window.localStorage.getItem(lastLauncherStorageKey)
+  } catch {
+    return 'vscode'
+  }
+  return stored === 'finder' || stored === 'vscode' ? stored : 'vscode'
+}
+
+function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
+  lastLauncherTarget.value = target
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(lastLauncherStorageKey, target)
+    } catch {
+      // Launcher still works when storage is unavailable; it just won't persist.
+    }
+  }
 }
 </script>
 
@@ -234,16 +270,43 @@ function markLauncherIconUnavailable(target: BackendProjectLauncherTarget) {
         v-tooltip="{ content: session.title, overflowOnly: true }"
       >{{ session.title }}</h1>
     </div>
-    <div ref="projectLauncherRef" class="relative shrink-0">
+    <div ref="projectLauncherRef" class="relative flex shrink-0 items-center gap-0.5">
       <button
-        class="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)]"
+        class="inline-flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)] disabled:cursor-wait disabled:opacity-70"
+        type="button"
+        :disabled="Boolean(launcherBusyTarget)"
+        :aria-label="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
+        v-tooltip="`Open in ${launcherTargetLabel(lastLauncherTarget)}`"
+        @click.stop="openProjectLauncherTarget(lastLauncherTarget)"
+      >
+        <Loader2
+          v-if="launcherBusyTarget === lastLauncherTarget"
+          class="animate-spin"
+          :size="17"
+        />
+        <img
+          v-else-if="launcherIconAvailable[lastLauncherTarget]"
+          class="project-launcher-direct-icon"
+          :src="projectLauncherIconUrl(lastLauncherTarget)"
+          alt=""
+          @error="markLauncherIconUnavailable(lastLauncherTarget)"
+        />
+        <component
+          :is="launcherTargetFallbackIcon(lastLauncherTarget)"
+          v-else
+          :size="17"
+        />
+      </button>
+      <button
+        class="inline-flex h-8 w-7 items-center justify-center rounded-md text-[color:var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[color:var(--text-primary)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--border-subtle)] disabled:cursor-wait disabled:opacity-70"
         type="button"
         aria-haspopup="menu"
         :aria-expanded="launcherOpen"
-        v-tooltip="'Open in ...'"
+        :disabled="Boolean(launcherBusyTarget)"
+        aria-label="Choose app to open project"
+        v-tooltip="'Choose app'"
         @click.stop="toggleProjectLauncher"
       >
-        <AppWindowMac :size="17" />
         <ChevronDown :size="15" />
       </button>
       <Transition name="project-launcher">
@@ -255,49 +318,27 @@ function markLauncherIconUnavailable(target: BackendProjectLauncherTarget) {
           @click.stop
         >
           <button
+            v-for="target in launcherTargets"
+            :key="target.id"
             class="project-launcher-item"
             type="button"
             role="menuitem"
             :disabled="Boolean(launcherBusyTarget)"
-            @click="openProjectLauncherTarget('vscode')"
+            @click="openProjectLauncherTarget(target.id)"
           >
             <img
-              v-if="launcherIconAvailable.vscode"
+              v-if="launcherIconAvailable[target.id]"
               class="project-launcher-app-icon"
-              :src="projectLauncherIconUrl('vscode')"
+              :src="projectLauncherIconUrl(target.id)"
               alt=""
-              @error="markLauncherIconUnavailable('vscode')"
+              @error="markLauncherIconUnavailable(target.id)"
             />
             <span v-else class="project-launcher-fallback-icon">
-              <Code :size="16" />
+              <component :is="target.fallbackIcon" :size="16" />
             </span>
-            <span class="min-w-0 flex-1 truncate">VS Code</span>
+            <span class="min-w-0 flex-1 truncate">{{ target.label }}</span>
             <Loader2
-              v-if="launcherBusyTarget === 'vscode'"
-              class="animate-spin text-[color:var(--text-muted)]"
-              :size="15"
-            />
-          </button>
-          <button
-            class="project-launcher-item"
-            type="button"
-            role="menuitem"
-            :disabled="Boolean(launcherBusyTarget)"
-            @click="openProjectLauncherTarget('finder')"
-          >
-            <img
-              v-if="launcherIconAvailable.finder"
-              class="project-launcher-app-icon"
-              :src="projectLauncherIconUrl('finder')"
-              alt=""
-              @error="markLauncherIconUnavailable('finder')"
-            />
-            <span v-else class="project-launcher-fallback-icon">
-              <FolderOpen :size="16" />
-            </span>
-            <span class="min-w-0 flex-1 truncate">Finder</span>
-            <Loader2
-              v-if="launcherBusyTarget === 'finder'"
+              v-if="launcherBusyTarget === target.id"
               class="animate-spin text-[color:var(--text-muted)]"
               :size="15"
             />
@@ -346,6 +387,13 @@ function markLauncherIconUnavailable(target: BackendProjectLauncherTarget) {
   height: 18px;
   width: 18px;
   flex-shrink: 0;
+  object-fit: contain;
+}
+
+.project-launcher-direct-icon {
+  display: block;
+  height: 19px;
+  width: 19px;
   object-fit: contain;
 }
 
