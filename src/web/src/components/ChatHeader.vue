@@ -409,6 +409,15 @@ function saveLastLauncherTarget(target: BackendProjectLauncherTarget) {
   width: 26px;
 }
 
+.project-launcher-direct-button > :deep(svg),
+.project-launcher-direct-icon {
+  transform: translateX(3px);
+}
+
+.project-launcher-menu-button > :deep(svg) {
+  transform: translateX(-3px);
+}
+
 .project-launcher-item {
   display: flex;
   height: 32px;
