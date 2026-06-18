@@ -108,3 +108,64 @@ def test_playwright_browser_environment_roundtrip(tmp_path):
   finally:
     server.shutdown()
     thread.join(timeout=2)
+
+
+def test_browser_snapshot_includes_visible_shadow_root_text(tmp_path):
+  page = tmp_path / "shadow.html"
+  page.write_text(
+      """
+<!doctype html>
+<html>
+  <head><title>Shadow Overlay Test</title></head>
+  <body>
+    <vite-error-overlay></vite-error-overlay>
+    <script>
+      const overlay = document.querySelector('vite-error-overlay')
+      const root = overlay.attachShadow({ mode: 'open' })
+      root.innerHTML = `
+        <style>
+          :host {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgb(20, 20, 20);
+            color: rgb(255, 90, 90);
+            font: 16px monospace;
+          }
+        </style>
+        <div>[plugin:vite:esbuild] Transform failed with 3 errors</div>
+        <pre>/src/App.tsx:464:57 ERROR: The character "&gt;" is not valid inside a JSX element</pre>
+      `
+    </script>
+  </body>
+</html>
+""",
+      encoding="utf-8",
+  )
+  handler = partial(SimpleHTTPRequestHandler, directory=str(tmp_path))
+  server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+  thread = Thread(target=server.serve_forever, daemon=True)
+  thread.start()
+
+  async def go():
+    root = tmp_path / ".handa"
+    session_id = "sess-shadow"
+    manager = BrowserEnvironmentManager(root)
+    try:
+      await manager.open(
+          session_id=session_id,
+          url=f"http://127.0.0.1:{server.server_port}/shadow.html",
+      )
+      snapshot = await manager.snapshot(session_id=session_id, max_elements=10)
+      assert "Transform failed with 3 errors" in snapshot["text"]
+      assert "not valid inside a JSX element" in snapshot["text"]
+    finally:
+      await manager.stop()
+
+  try:
+    asyncio.run(go())
+  except BrowserEnvironmentError as exc:
+    pytest.skip(f"{exc} Run `uv run playwright install chromium`.")
+  finally:
+    server.shutdown()
+    thread.join(timeout=2)

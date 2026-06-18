@@ -6,11 +6,19 @@ from types import SimpleNamespace
 from google.genai import types
 
 from src.agents import native_runner
+from src.agents.native_runner import CODE_AGENT_MAX_OUTPUT_TOKENS
 from src.agents.orca.runner import run
 
 
-def _model_response(content: types.Content) -> SimpleNamespace:
-  return SimpleNamespace(candidates=[SimpleNamespace(content=content)])
+def _model_response(
+    content: types.Content,
+    *,
+    finish_reason: str | None = None,
+) -> SimpleNamespace:
+  candidate = SimpleNamespace(content=content)
+  if finish_reason is not None:
+    candidate.finish_reason = finish_reason
+  return SimpleNamespace(candidates=[candidate])
 
 
 def _function_call(name: str, args: dict) -> types.Content:
@@ -115,6 +123,72 @@ def test_orca_can_return_candidate_without_final_agent_text(tmp_path, monkeypatc
     assert outcome.final_text == "Candidate answer."
     assert "agent_text" not in [event["kind"] for event in events]
     assert events[-1]["kind"] == "orca.history_boundary"
+
+  asyncio.run(run_test())
+
+
+def test_orca_uses_code_agent_output_budget(tmp_path, monkeypatch):
+  async def run_test():
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    calls: list[types.GenerateContentConfig] = []
+
+    async def fake_generate(*, client, model, contents, config):
+      calls.append(config)
+      return _model_response(_text("Done."))
+
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
+
+    async def emit_event(event):
+      pass
+
+    outcome = await run(
+        prompt="Write a large file.",
+        project_root=str(project),
+        session_id="session-orca-output-budget",
+        user_id="user",
+        emit_event=emit_event,
+        model_config_id="gemini-3.5-flash",
+    )
+
+    assert outcome.final_text == "Done."
+    assert calls[0].max_output_tokens == CODE_AGENT_MAX_OUTPUT_TOKENS
+    assert calls[0].max_output_tokens > 8192
+
+  asyncio.run(run_test())
+
+
+def test_orca_model_text_includes_finish_reason(tmp_path, monkeypatch):
+  async def run_test():
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    async def fake_generate(*, client, model, contents, config):
+      return _model_response(_text("Partial response."), finish_reason="MAX_TOKENS")
+
+    monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
+    events = []
+
+    async def emit_event(event):
+      events.append(event)
+
+    outcome = await run(
+        prompt="Write a large file.",
+        project_root=str(project),
+        session_id="session-orca-finish-reason",
+        user_id="user",
+        emit_event=emit_event,
+        model_config_id="gemini-3.5-flash",
+    )
+
+    assert outcome.final_text == "Partial response."
+    model_text = next(event for event in events if event["kind"] == "orca.model_text")
+    assert model_text["payload"]["finish_reason"] == "MAX_TOKENS"
 
   asyncio.run(run_test())
 

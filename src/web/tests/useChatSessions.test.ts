@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackendStep } from '../src/api/types'
-import { stepHasArtifactDelta, useChatSessions } from '../src/composables/useChatSessions'
+import { hiddenStepDebugPayload, stepHasArtifactDelta, useChatSessions } from '../src/composables/useChatSessions'
 import type { AgentSession } from '../src/types'
 
 function step(kind: string, payload: Record<string, unknown> = {}): Pick<BackendStep, 'kind' | 'payload'> {
@@ -29,6 +29,71 @@ describe('stepHasArtifactDelta', () => {
     expect(stepHasArtifactDelta(step('tool_response'))).toBe(false)
     expect(stepHasArtifactDelta(step('tool_response', { projections: { kind: 'artifact_delta' } }))).toBe(false)
     expect(stepHasArtifactDelta(step('tool_response', { projections: [{ kind: 'progress_delta' }] }))).toBe(false)
+  })
+})
+
+describe('hiddenStepDebugPayload', () => {
+  it('prints nested goal judge messages for debugging', () => {
+    const debug = hiddenStepDebugPayload('session-1', {
+      id: 'step-1',
+      turn_id: 'turn-1',
+      seq: 3,
+      kind: 'runtime_step',
+      summary: 'Goal judge: continue',
+      payload: {
+        kind: 'goal_judge_verdict',
+        goal_id: 'goal-1',
+        goal_attempt_id: 'attempt-1',
+        attempt_number: 1,
+        verdict: {
+          status: 'continue',
+          reason: 'The second attempt has not written the file yet.',
+          next_request: 'Write the file and run the browser verification.',
+        },
+      },
+      raw_event: {
+        kind: 'goal_judge_verdict',
+        payload: {
+          verdict: {
+            reason: 'The second attempt has not written the file yet.',
+            next_request: 'Write the file and run the browser verification.',
+          },
+        },
+      },
+      created_at: '2026-06-18T00:00:00.000Z',
+    })
+
+    expect(debug?.hiddenReason).toBe('goal step')
+    expect(debug?.judgeReason).toBe('The second attempt has not written the file yet.')
+    expect(debug?.hiddenMessage).toBe('Write the file and run the browser verification.')
+    expect(debug?.hiddenMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'payload',
+          path: 'payload.verdict.reason',
+          value: 'The second attempt has not written the file yet.',
+        }),
+        expect.objectContaining({
+          source: 'payload',
+          path: 'payload.verdict.next_request',
+          value: 'Write the file and run the browser verification.',
+        }),
+      ]),
+    )
+  })
+
+  it('does not treat normal visible steps as hidden debug messages', () => {
+    const debug = hiddenStepDebugPayload('session-1', {
+      id: 'step-2',
+      turn_id: 'turn-1',
+      seq: 4,
+      kind: 'tool_response',
+      summary: 'Command finished',
+      payload: { name: 'command', response: { ok: true } },
+      created_at: '2026-06-18T00:00:00.000Z',
+    })
+
+    expect(debug).toBeNull()
   })
 })
 

@@ -7,9 +7,12 @@ from typing import TYPE_CHECKING
 from ..contract.parent_runs import finalize_parent_agent_task
 from ..contract.product import validate_model_config_id
 from ..contract.services import APP_NAME
+from ..contract.task_store import AGENT_RUN_TASK_KINDS
+from ..contract.task_store import append_task_event
 from ..contract.task_store import create_task_notification
 from ..contract.task_store import list_task_events
 from ..contract.task_store import list_task_notifications
+from ..contract.task_store import list_tasks
 from ..contract.task_store import load_task
 from ..contract.task_store import now_iso
 from ..contract.task_store import read_task_result
@@ -80,6 +83,7 @@ class BackgroundTaskManager:
     # Fire scheduled (time-trigger) automated tasks that have come due.
     await dispatch_due_time_triggers(self.ctx)
     for session_id in self._task_session_ids():
+      self._ensure_terminal_task_events(session_id)
       created += self._create_notifications_for_session(session_id)
       result = await self._deliver_pending_notifications(session_id)
       delivered += result["delivered"]
@@ -94,6 +98,41 @@ class BackgroundTaskManager:
     for path in sorted(root.glob("*/tasks/task_events.jsonl")):
       session_ids.append(path.parent.parent.name)
     return session_ids
+
+  def _ensure_terminal_task_events(self, session_id: str) -> int:
+    existing = {
+        (str(event.get("task_id") or ""), str(event.get("kind") or ""))
+        for event in list_task_events(session_id=session_id, limit=200)
+        if event.get("kind") in TERMINAL_TASK_EVENTS
+    }
+    created = 0
+    for task in list_tasks(session_id=session_id):
+      task_id = str(task.get("id") or "").strip()
+      if str(task.get("kind") or "") == "web_turn":
+        continue
+      event_kind = _terminal_event_kind(task)
+      if not task_id or event_kind is None:
+        continue
+      if (
+          str(task.get("kind") or "") in AGENT_RUN_TASK_KINDS
+          and not read_task_result(task_id, session_id=session_id).get("found")
+      ):
+        continue
+      if (task_id, event_kind) in existing:
+        continue
+      append_task_event(
+          event_kind,
+          _terminal_event_summary(task, task_id, event_kind),
+          session_id=session_id,
+          task_id=task_id,
+          payload={
+              "child_session_id": task.get("child_session_id"),
+              "returncode": task.get("returncode"),
+          },
+      )
+      existing.add((task_id, event_kind))
+      created += 1
+    return created
 
   def _create_notifications_for_session(self, session_id: str) -> int:
     created = 0
@@ -291,6 +330,24 @@ def _render_notification_message(notification: dict[str, Any]) -> str:
     lines.extend(["", f"result_summary: {final_text}"])
   lines.extend(["", "Use task/result/artifact tools if you need details."])
   return "\n".join(lines)
+
+
+def _terminal_event_kind(task: dict[str, Any]) -> str | None:
+  status = str(task.get("status") or "")
+  if status == "succeeded":
+    return "task.completed"
+  return None
+
+
+def _terminal_event_summary(
+    task: dict[str, Any],
+    task_id: str,
+    event_kind: str,
+) -> str:
+  kind = str(task.get("kind") or "task")
+  if event_kind == "task.completed":
+    return f"{kind} {task_id} completed"
+  return f"{kind} {task_id} reached a terminal state"
 
 
 def _compact_text(value: Any, *, max_chars: int = 2000) -> str | None:

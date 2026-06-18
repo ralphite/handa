@@ -6,13 +6,14 @@ from typing import Any
 from ..config import AgentConfig
 from ..run_outcome import RunOutcome
 from .native_runner import AgentEventEmitter
+from .native_runner import CODE_AGENT_MAX_OUTPUT_TOKENS
 from .native_runner import generate_model_response as _default_generate_model_response
 from .native_runner import run_native_agent
 from .orca.tools import build_session_context
 from .orca.tools import build_toolset
 
 
-DEFAULT_MAX_OUTPUT_TOKENS = 8192
+DEFAULT_MAX_OUTPUT_TOKENS = CODE_AGENT_MAX_OUTPUT_TOKENS
 HISTORY_STATE_KEY = "handa:native_config_history"
 PENDING_ROUNDS_STATE_KEY = "handa:native_config_pending_rounds"
 HISTORY_BOUNDARY_EVENT_KIND = "native_config.history_boundary"

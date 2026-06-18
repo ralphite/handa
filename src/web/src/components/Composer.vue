@@ -424,6 +424,22 @@ function replaceDraftUndoable(text: string) {
   draft.value = text
 }
 
+// A native undo (cmd+z) of an optimize rewrite restores the selection that was
+// active when the edit was recorded — the whole textarea, since we select-all
+// before replacing — leaving the reverted prompt fully highlighted. Collapse a
+// full-document selection to the caret on undo so the text just comes back,
+// unselected. Only the selection is touched (never the value), so redo stays
+// intact.
+function handleComposerInput(event: Event) {
+  if ((event as InputEvent).inputType !== 'historyUndo') return
+  const textarea = textareaRef.value
+  if (!textarea) return
+  const end = textarea.value.length
+  if (end > 0 && textarea.selectionStart === 0 && textarea.selectionEnd === end) {
+    textarea.setSelectionRange(end, end)
+  }
+}
+
 async function handleOptimizeClick() {
   if (canUndoOptimize.value) {
     replaceDraftUndoable(draftBeforeOptimize.value ?? '')
@@ -1094,6 +1110,7 @@ defineExpose({
       :disabled="composerInputDisabled"
       data-testid="composer-input"
       @keydown="handleComposerKeydown"
+      @input="handleComposerInput"
       @paste="handlePaste"
     ></textarea>
     <div class="flex flex-wrap items-center gap-2">

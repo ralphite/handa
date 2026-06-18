@@ -50,6 +50,8 @@ LOGGER = logging.getLogger("handa.native_runner")
 # whole invocation (which is forbidden once output has streamed this turn).
 MODEL_TRANSPORT_RETRY_ATTEMPTS = 3
 MODEL_TRANSPORT_RETRY_BASE_DELAY_SEC = 1.0
+DEFAULT_NATIVE_MAX_OUTPUT_TOKENS = 8192
+CODE_AGENT_MAX_OUTPUT_TOKENS = 32768
 
 AgentEventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 BuildSessionContext = Callable[..., Any]
@@ -64,7 +66,7 @@ def make_native_agent_run(
     display_name: str,
     build_session_context: BuildSessionContext,
     build_toolset: BuildToolset,
-    default_max_output_tokens: int = 8192,
+    default_max_output_tokens: int = DEFAULT_NATIVE_MAX_OUTPUT_TOKENS,
 ) -> Callable[..., Awaitable[RunOutcome]]:
   """Build a registered agent's ``run`` entrypoint from a config file + prefix.
 
@@ -256,6 +258,7 @@ async def run_native_agent(
     content = _response_content(response)
     calls = _function_calls(content)
     text = _content_text(content)
+    finish_reason = _finish_reason(response)
     usage_metadata = _usage_payload(response)
     history.append(content)
     _save_history(
@@ -268,6 +271,8 @@ async def run_native_agent(
     )
     if text:
       payload: dict[str, Any] = {"text": text, "has_tool_calls": bool(calls)}
+      if finish_reason:
+        payload["finish_reason"] = finish_reason
       if usage_metadata:
         payload["usage_metadata"] = usage_metadata
       await emit_event(
@@ -663,6 +668,24 @@ def _usage_payload(response: Any) -> dict[str, Any] | None:
     return jsonable if isinstance(jsonable, dict) else None
   jsonable = _jsonable(value)
   return jsonable if isinstance(jsonable, dict) else None
+
+
+def _finish_reason(response: Any) -> str | None:
+  for candidate in getattr(response, "candidates", None) or []:
+    value = getattr(candidate, "finish_reason", None) or getattr(
+        candidate,
+        "finishReason",
+        None,
+    )
+    if value is None:
+      continue
+    if hasattr(value, "name"):
+      return str(value.name)
+    if hasattr(value, "value"):
+      return str(value.value)
+    text = str(value).strip()
+    return text or None
+  return None
 
 
 def _load_history(

@@ -1984,6 +1984,67 @@ def test_background_task_manager_delivers_subagent_completion_notification(
   assert len(list_task_notifications(session_id=parent["id"])) == 1
 
 
+def test_background_task_manager_recovers_missing_terminal_task_event(
+    tmp_path,
+    monkeypatch,
+):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("HANDA_PROJECT_ROOT", str(project))
+
+  app = create_app()
+  client = TestClient(app)
+  project = client.post("/api/projects", json={"root_path": str(project)}).json()
+  client.patch("/api/settings", json={"model_config_id": "gemini-3.5-flash"})
+  parent = client.post(
+      "/api/sessions",
+      json={"agent_id": "orca", "project_id": project["id"]},
+  ).json()
+  task = start_run_agent_task(
+      agent_id="browser",
+      prompt="Verify the page.",
+      session_id=parent["id"],
+      user_id="user",
+      app_name="handa",
+  )
+  task_state = load_task(task["id"], session_id=parent["id"])
+  task_state["status"] = "succeeded"
+  task_state["returncode"] = 0
+  save_task(task_state)
+  task_result_file(task["id"], session_id=parent["id"]).write_text(
+      json.dumps(
+          {
+              "success": True,
+              "task_id": task["id"],
+              "kind": task["kind"],
+              "agent_id": task.get("agent_id"),
+              "child_session_id": task["child_session_id"],
+              "final_text": "Browser verification passed.",
+          }
+      )
+      + "\n",
+      encoding="utf-8",
+  )
+
+  ctx = app.state.web_context
+  manager = BackgroundTaskManager(ctx, start_invocation_run=False)
+  result = asyncio.run(manager.process_once())
+  events = list_task_events(session_id=parent["id"], limit=20)
+  notifications = list_task_notifications(session_id=parent["id"])
+  invocations = ctx.db.list_turns_for_session(parent["id"])
+
+  assert result == {"created": 1, "delivered": 1, "blocked": 0}
+  assert any(
+      event["kind"] == "task.completed" and event["task_id"] == task["id"]
+      for event in events
+  )
+  assert len(notifications) == 1
+  assert notifications[0]["payload"]["final_text"] == "Browser verification passed."
+  assert invocations[-1]["trigger_kind"] == "task_notification"
+
+
 def test_background_task_manager_skips_suppressed_task_notifications(
     tmp_path,
     monkeypatch,

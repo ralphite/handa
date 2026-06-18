@@ -90,6 +90,33 @@ const DETAIL_POLL_MS = 1800
 // a slow cadence; the per-session pollers above cover already-known sessions.
 const SESSION_LIST_POLL_MS = 5000
 
+type HiddenDebugMessage = {
+  source: 'event' | 'payload' | 'rawEvent'
+  path: string
+  value: string
+}
+
+type HiddenStepDebugPayload = {
+  sessionId: string
+  turnId: string
+  seq: number
+  kind: string
+  sourceKind: string
+  hiddenReason: string
+  summary: string
+  createdAt: string
+  goalId: unknown
+  goalAttemptId: unknown
+  attemptNumber: unknown
+  nextAttemptNumber: unknown
+  status: unknown
+  judgeReason: string | null
+  hiddenMessage: string | null
+  hiddenMessages: HiddenDebugMessage[]
+  payload: Record<string, unknown>
+  rawEvent: Record<string, unknown> | null
+}
+
 export function useChatSessions(options: { onActionError?: (message: string) => void } = {}) {
   const backendProjects = ref<BackendProject[]>([])
   const agentDefinitions = ref<BackendAgentDefinition[]>([])
@@ -104,6 +131,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
   const userInputSubmitting = ref(false)
   const lastSeqByTurn = new Map<string, number>()
   const lastSeqBySession = new Map<string, number>()
+  const loggedHiddenSteps = new Set<string>()
   const timers = new Map<string, number>()
   const detailTimers = new Map<string, number>()
   const detailPollSettleUntil = new Map<string, number>()
@@ -547,14 +575,6 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     modelConfigId?: string,
     existingSession?: AgentSession,
   ) {
-    logInvocationStartMessages({
-      payload,
-      projectId,
-      agentId,
-      reuseSessionId,
-      modelConfigId,
-      existingSession,
-    })
     const invocation = await createTurn(
       payload.prompt,
       projectId,
@@ -594,57 +614,6 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
       setActiveSessionId(session.id)
     }
     pollInvocation(invocation.id)
-  }
-
-  function logInvocationStartMessages({
-    payload,
-    projectId,
-    agentId,
-    reuseSessionId,
-    modelConfigId,
-    existingSession,
-  }: {
-    payload: { prompt: string; files: File[]; existingAttachmentIds?: string[]; goal?: boolean }
-    projectId: string
-    agentId: string
-    reuseSessionId?: string
-    modelConfigId?: string
-    existingSession?: AgentSession
-  }) {
-    const session = existingSession ?? sessions.value.find((item) => item.id === reuseSessionId) ?? null
-    console.log('[Handa] invocation start messages', {
-      sessionId: reuseSessionId ?? null,
-      projectId,
-      agentId,
-      modelConfigId: modelConfigId ?? null,
-      goal: Boolean(payload.goal),
-      messages: (session?.messages ?? []).map((message, index) => ({
-        index,
-        id: message.id,
-        role: message.role,
-        turnId: message.turnId ?? null,
-        invocationId: message.invocationId ?? null,
-        status: message.status ?? null,
-        body: message.body,
-        attachments: (message.attachments ?? []).map((attachment) => ({
-          id: attachment.id,
-          filename: attachment.filename,
-          mimeType: attachment.mimeType,
-          byteCount: attachment.byteCount,
-          kind: attachment.kind,
-        })),
-      })),
-      outgoing: {
-        role: 'user',
-        body: payload.prompt,
-        files: payload.files.map((file) => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        })),
-        existingAttachmentIds: payload.existingAttachmentIds ?? [],
-      },
-    })
   }
 
   async function stopActiveInvocation() {
@@ -1266,6 +1235,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
         sessionSeq <= (lastSeqBySession.get(session.id) ?? 0)
       ) continue
       if (event.seq <= (lastSeqByTurn.get(event.turn_id) ?? 0)) continue
+      logHiddenStep(session, event)
       applyEvent(session, event, event.turn_id)
       if (stepHasArtifactDelta(event)) artifactsChanged = true
       lastSeqByTurn.set(event.turn_id, event.seq)
@@ -1600,6 +1570,7 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     }
 
     for (const event of detail.steps) {
+      logHiddenStep(session, event)
       applyEvent(session, event, syntheticInvocationId)
     }
     return session
@@ -1745,6 +1716,64 @@ export function useChatSessions(options: { onActionError?: (message: string) => 
     }
   }
 
+  function logHiddenStep(session: AgentSession, event: BackendStep) {
+    const debugPayload = hiddenStepDebugPayload(session.id, event)
+    if (!debugPayload) return
+    const key = `${session.id}:${event.turn_id}:${event.seq}:${debugPayload.kind}`
+    if (loggedHiddenSteps.has(key)) return
+    loggedHiddenSteps.add(key)
+
+    const debugJson = JSON.stringify(debugPayload, null, 2)
+    const debugWindow = window as typeof window & {
+      __handaHiddenSteps?: HiddenStepDebugPayload[]
+      __handaLastHiddenStep?: HiddenStepDebugPayload
+      __handaHiddenGoalSteps?: HiddenStepDebugPayload[]
+      __handaLastHiddenGoalStep?: HiddenStepDebugPayload
+      __handaHiddenMessages?: Array<HiddenDebugMessage & { sessionId: string; turnId: string; seq: number; kind: string }>
+    }
+    debugWindow.__handaHiddenSteps = [...(debugWindow.__handaHiddenSteps ?? []), debugPayload]
+    debugWindow.__handaLastHiddenStep = debugPayload
+    debugWindow.__handaHiddenMessages = [
+      ...(debugWindow.__handaHiddenMessages ?? []),
+      ...debugPayload.hiddenMessages.map((message) => ({
+        ...message,
+        sessionId: debugPayload.sessionId,
+        turnId: debugPayload.turnId,
+        seq: debugPayload.seq,
+        kind: debugPayload.kind,
+      })),
+    ]
+    if (debugPayload.kind.startsWith('goal_')) {
+      debugWindow.__handaHiddenGoalSteps = [...(debugWindow.__handaHiddenGoalSteps ?? []), debugPayload]
+      debugWindow.__handaLastHiddenGoalStep = debugPayload
+    }
+    console.group(`[Handa] hidden step: ${debugPayload.kind}`)
+    console.log('metadata', {
+      sessionId: debugPayload.sessionId,
+      turnId: debugPayload.turnId,
+      seq: debugPayload.seq,
+      kind: debugPayload.kind,
+      sourceKind: debugPayload.sourceKind,
+      hiddenReason: debugPayload.hiddenReason,
+      status: debugPayload.status,
+      attemptNumber: debugPayload.attemptNumber,
+      nextAttemptNumber: debugPayload.nextAttemptNumber,
+    })
+    if (debugPayload.hiddenMessages.length) {
+      console.group('hidden messages')
+      for (const message of debugPayload.hiddenMessages) {
+        console.log(`${message.source}:${message.path}`, message.value)
+      }
+      console.groupEnd()
+    }
+    if (debugPayload.judgeReason) console.log('judge reason', debugPayload.judgeReason)
+    if (debugPayload.hiddenMessage) console.log('hidden message', debugPayload.hiddenMessage)
+    console.log('payload', event.payload)
+    if (event.raw_event) console.log('raw event', event.raw_event)
+    console.log('[Handa] hidden step JSON\n' + debugJson)
+    console.groupEnd()
+  }
+
   function sessionForInvocation(invocationId: string) {
     return sessions.value.find((session) =>
       session.messages.some((message) => message.invocationId === invocationId),
@@ -1835,6 +1864,53 @@ export function stepHasArtifactDelta(event: Pick<BackendStep, 'kind' | 'payload'
   return projections.some((projection) => {
     return isRecord(projection) && projection.kind === 'artifact_delta'
   })
+}
+
+export function hiddenStepDebugPayload(sessionId: string, event: BackendStep): HiddenStepDebugPayload | null {
+  const payloadKind = typeof event.payload.kind === 'string' ? event.payload.kind.trim() : ''
+  const kind = payloadKind || event.kind
+  let hiddenMessages = hiddenDebugMessages(event)
+  const hiddenReason = hiddenStepReason(event, kind, hiddenMessages)
+  if (!hiddenReason) return null
+  const summary = textField(event.summary)
+  if (summary) {
+    hiddenMessages = dedupeHiddenMessages([
+      { source: 'event', path: 'summary', value: summary },
+      ...hiddenMessages,
+    ])
+  }
+
+  const verdict = plainRecord(event.payload.verdict)
+  const hiddenMessage = textField(event.payload.next_request)
+    ?? textField(verdict?.next_request)
+    ?? hiddenMessages.find((message) => isNextRequestPath(message.path))?.value
+    ?? null
+  const judgeReason = textField(event.payload.judge_reason)
+    ?? textField(verdict?.reason)
+    ?? textField(event.payload.reason)
+    ?? hiddenMessages.find((message) => message.path.endsWith('.reason'))?.value
+    ?? null
+
+  return {
+    sessionId,
+    turnId: event.turn_id,
+    seq: event.seq,
+    kind,
+    sourceKind: event.kind,
+    hiddenReason,
+    summary: event.summary,
+    createdAt: event.created_at,
+    goalId: event.payload.goal_id ?? null,
+    goalAttemptId: event.payload.goal_attempt_id ?? event.payload.previous_goal_attempt_id ?? null,
+    attemptNumber: event.payload.attempt_number ?? null,
+    nextAttemptNumber: event.payload.next_attempt_number ?? null,
+    status: verdict?.status ?? event.payload.status ?? null,
+    judgeReason,
+    hiddenMessage,
+    hiddenMessages,
+    payload: event.payload,
+    rawEvent: event.raw_event ?? null,
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2307,6 +2383,139 @@ function pendingUserInputFromPayload(
   }
   if (!requestId || questions.length === 0) return undefined
   return { requestId, turnId, questions }
+}
+
+function hiddenStepReason(
+  event: BackendStep,
+  kind: string,
+  hiddenMessages: HiddenDebugMessage[] = hiddenDebugMessages(event),
+): string | null {
+  const rawEvent = plainRecord(event.raw_event)
+  if (kind.startsWith('goal_')) return 'goal step'
+  if (kind.startsWith('hook.')) return 'hook step'
+  if (kind.endsWith('.started')) return 'started step'
+  if (kind.endsWith('.history_boundary')) return 'history boundary'
+  if (hasHiddenFlag(event.payload) || hasHiddenFlag(rawEvent)) return 'hidden flag'
+  if (hasVisibleFalseFlag(event.payload) || hasVisibleFalseFlag(rawEvent)) return 'visible false'
+  if (hiddenMessages.length > 0) return 'hidden message field'
+  return null
+}
+
+function hiddenDebugMessages(event: BackendStep): HiddenDebugMessage[] {
+  const messages: HiddenDebugMessage[] = []
+  collectHiddenDebugMessages(event.payload, 'payload', 'payload', messages)
+  collectHiddenDebugMessages(event.raw_event ?? null, 'rawEvent', 'raw_event', messages)
+  return dedupeHiddenMessages(messages)
+}
+
+function collectHiddenDebugMessages(
+  value: unknown,
+  source: HiddenDebugMessage['source'],
+  path: string,
+  messages: HiddenDebugMessage[],
+  seen = new WeakSet<object>(),
+  depth = 0,
+) {
+  if (depth > 12) return
+  if (typeof value === 'string') {
+    const text = textField(value)
+    if (text && isHiddenTextPath(path)) messages.push({ source, path, value: text })
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  if (seen.has(value)) return
+  seen.add(value)
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectHiddenDebugMessages(item, source, `${path}[${index}]`, messages, seen, depth + 1)
+    })
+    return
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    collectHiddenDebugMessages(child, source, `${path}.${key}`, messages, seen, depth + 1)
+  }
+}
+
+function dedupeHiddenMessages(messages: HiddenDebugMessage[]): HiddenDebugMessage[] {
+  const seen = new Set<string>()
+  const result: HiddenDebugMessage[] = []
+  for (const message of messages) {
+    const key = `${message.source}:${message.path}:${message.value}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(message)
+  }
+  return result
+}
+
+function isHiddenTextPath(path: string): boolean {
+  const key = normalizePathSegment(path.split('.').pop() ?? '')
+  return (
+    key === 'nextrequest' ||
+    key === 'hiddenmessage' ||
+    key === 'hiddenmsg' ||
+    key === 'hiddentext' ||
+    key === 'judgereason' ||
+    key === 'reason' ||
+    key === 'message' ||
+    key === 'messages' ||
+    key === 'text' ||
+    key === 'prompt' ||
+    key === 'content' ||
+    key === 'request' ||
+    key === 'response' ||
+    key === 'instruction' ||
+    key === 'instructions'
+  )
+}
+
+function isNextRequestPath(path: string): boolean {
+  return normalizePathSegment(path.split('.').pop() ?? '') === 'nextrequest'
+}
+
+function normalizePathSegment(value: string): string {
+  return value.replace(/\[[0-9]+\]$/u, '').replace(/[_-]/gu, '').toLowerCase()
+}
+
+function hasHiddenFlag(record: Record<string, unknown> | null): boolean {
+  if (!record) return false
+  return hasBooleanFlag(record, 'hidden', true)
+}
+
+function hasVisibleFalseFlag(record: Record<string, unknown> | null): boolean {
+  if (!record) return false
+  return hasBooleanFlag(record, 'visible', false)
+}
+
+function hasBooleanFlag(
+  value: unknown,
+  targetKey: 'hidden' | 'visible',
+  targetValue: boolean,
+  seen = new WeakSet<object>(),
+  depth = 0,
+): boolean {
+  if (depth > 12 || !value || typeof value !== 'object') return false
+  if (seen.has(value)) return false
+  seen.add(value)
+  if (Array.isArray(value)) {
+    return value.some((item) => hasBooleanFlag(item, targetKey, targetValue, seen, depth + 1))
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (normalizePathSegment(key) === targetKey && child === targetValue) return true
+    if (hasBooleanFlag(child, targetKey, targetValue, seen, depth + 1)) return true
+  }
+  return false
+}
+
+function plainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function textField(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
 }
 
 function isLiveStatus(status: AgentSession['status']) {

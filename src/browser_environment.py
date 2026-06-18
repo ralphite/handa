@@ -914,7 +914,34 @@ SNAPSHOT_SCRIPT = r"""
     const rect = el.getBoundingClientRect()
     return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0
   }
-  const pageText = (document.body ? document.body.innerText || document.body.textContent || '' : '')
+  const collectShadowText = (root) => {
+    const chunks = []
+    const visit = (node, visible) => {
+      if (!node) return
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (visible) {
+          const text = String(node.textContent || '').replace(/\s+/g, ' ').trim()
+          if (text) chunks.push(text)
+        }
+        return
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = node.tagName.toLowerCase()
+        if (tag === 'script' || tag === 'style' || tag === 'template') return
+        const nextVisible = visible && isVisible(node)
+        if (node.shadowRoot) visit(node.shadowRoot, nextVisible)
+        for (const child of Array.from(node.childNodes)) visit(child, nextVisible)
+        return
+      }
+      for (const child of Array.from(node.childNodes || [])) visit(child, visible)
+    }
+    for (const el of Array.from(document.querySelectorAll('*'))) {
+      if (el.shadowRoot) visit(el.shadowRoot, isVisible(el))
+    }
+    return chunks.join(' ')
+  }
+  const bodyText = document.body ? document.body.innerText || document.body.textContent || '' : ''
+  const pageText = `${bodyText} ${collectShadowText(document)}`
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 12000)
