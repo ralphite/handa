@@ -8,13 +8,14 @@ from typing import ContextManager
 from typing import Mapping
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_PHOENIX_COLLECTOR_ENDPOINT = "http://127.0.0.1:4317"
 _CONFIGURED = False
 _TRACING_ENABLED = False
 _TRACER: Any = None
 
 
 def setup_phoenix_tracing() -> bool:
-  """Configure Phoenix/OpenTelemetry tracing when the dev environment enables it."""
+  """Configure Phoenix/OpenTelemetry tracing whenever Phoenix is available."""
   global _CONFIGURED, _TRACING_ENABLED, _TRACER
   if _CONFIGURED:
     return _TRACING_ENABLED
@@ -26,10 +27,13 @@ def setup_phoenix_tracing() -> bool:
   try:
     from phoenix.otel import register
   except Exception as exc:  # noqa: BLE001 - observability is optional.
-    LOGGER.warning("Phoenix tracing requested but unavailable: %s", exc)
+    if _env_flag("HANDA_PHOENIX_ENABLED", default=False):
+      LOGGER.warning("Phoenix tracing requested but unavailable: %s", exc)
+    else:
+      LOGGER.debug("Phoenix tracing unavailable: %s", exc)
     return False
 
-  endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or None
+  endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or DEFAULT_PHOENIX_COLLECTOR_ENDPOINT
   project_name = os.getenv("PHOENIX_PROJECT_NAME") or "handa"
   try:
     provider = register(
@@ -69,7 +73,7 @@ def trace_span(
 def _phoenix_enabled() -> bool:
   value = os.getenv("HANDA_PHOENIX_ENABLED")
   if value is None:
-    return bool(os.getenv("PHOENIX_COLLECTOR_ENDPOINT") or os.getenv("PHOENIX_PROJECT_NAME"))
+    return True
   return value.strip().lower() not in {"", "0", "false", "no", "off"}
 
 

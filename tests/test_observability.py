@@ -64,6 +64,42 @@ def test_setup_phoenix_tracing_registers_provider(monkeypatch):
   assert spans == [("handa.test", {"session_id": "session-1"})]
 
 
+def test_setup_phoenix_tracing_defaults_on_when_phoenix_is_available(monkeypatch):
+  _reset_observability(monkeypatch)
+  calls = []
+
+  class FakeProvider:
+    def get_tracer(self, name):
+      calls.append({"get_tracer": name})
+      return object()
+
+  def fake_register(**kwargs):
+    calls.append(kwargs)
+    return FakeProvider()
+
+  phoenix = ModuleType("phoenix")
+  phoenix.__path__ = []
+  otel = ModuleType("phoenix.otel")
+  otel.register = fake_register
+  monkeypatch.setitem(sys.modules, "phoenix", phoenix)
+  monkeypatch.setitem(sys.modules, "phoenix.otel", otel)
+  monkeypatch.delenv("HANDA_PHOENIX_ENABLED", raising=False)
+  monkeypatch.delenv("PHOENIX_COLLECTOR_ENDPOINT", raising=False)
+  monkeypatch.delenv("PHOENIX_PROJECT_NAME", raising=False)
+
+  assert observability.setup_phoenix_tracing() is True
+
+  assert calls[0] == {
+      "endpoint": observability.DEFAULT_PHOENIX_COLLECTOR_ENDPOINT,
+      "project_name": "handa",
+      "protocol": "grpc",
+      "batch": False,
+      "auto_instrument": True,
+      "verbose": False,
+  }
+  assert calls[1] == {"get_tracer": "handa"}
+
+
 def test_setup_phoenix_tracing_respects_disabled_env(monkeypatch):
   _reset_observability(monkeypatch)
   monkeypatch.setenv("HANDA_PHOENIX_ENABLED", "0")
