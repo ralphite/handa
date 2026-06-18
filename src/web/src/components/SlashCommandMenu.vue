@@ -9,9 +9,9 @@ defineOptions({
 export interface SlashMenuItem {
   id: string
   title: string
-  /** Muted text shown after the title (e.g. the model tier). */
+  /** Muted text shown beside the title (e.g. command detail or model tier). */
   subtitle?: string
-  /** Right-aligned muted text, e.g. the current model on the `/model` row. */
+  /** Right-aligned muted text for compact trailing metadata. */
   hint?: string
   /** Leading icon component; used by command rows. */
   icon?: Component
@@ -43,7 +43,7 @@ const emit = defineEmits<{
     <button
       v-for="(item, index) in items"
       :key="item.id"
-      class="slash-menu-row flex h-8 w-full items-center gap-2 px-3 text-left"
+      class="slash-menu-row flex h-8 w-full items-center gap-1.5 px-3 text-left"
       :class="{ 'is-highlighted': index === highlightedIndex }"
       type="button"
       role="menuitem"
@@ -51,7 +51,7 @@ const emit = defineEmits<{
       @mousemove="emit('hover', index)"
       @click="emit('select', index)"
     >
-      <span class="grid h-5 w-5 shrink-0 place-items-center">
+      <span class="grid h-5 w-4 shrink-0 place-items-center">
         <Check v-if="item.selected" :size="16" stroke-width="2.3" class="text-[color:var(--accent)]" />
         <component v-else-if="item.icon" :is="item.icon" :size="15" class="text-[color:var(--text-muted)]" />
       </span>
@@ -67,7 +67,7 @@ const emit = defineEmits<{
           d="M12 2.5c.78 5.36 4.14 8.72 9.5 9.5-5.36.78-8.72 4.14-9.5 9.5-.78-5.36-4.14-8.72-9.5-9.5 5.36-.78 8.72-4.14 9.5-9.5Z"
         />
       </svg>
-      <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
+      <span class="flex min-w-0 flex-1 items-baseline gap-1">
         <span class="truncate text-[12px] font-medium text-[color:var(--text-primary)]">{{ item.title }}</span>
         <span
           v-if="item.subtitle"

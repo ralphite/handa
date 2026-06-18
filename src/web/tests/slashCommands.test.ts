@@ -38,8 +38,14 @@ describe('slashTokenAt', () => {
 })
 
 describe('filterSlashCommands', () => {
-  it('returns every command for an empty query, preserving order', () => {
-    expect(filterSlashCommands('')).toEqual([...SLASH_COMMANDS])
+  it('returns every command for an empty query, ordered alphabetically', () => {
+    expect(filterSlashCommands('').map((command) => command.id)).toEqual(['goal', 'model'])
+  })
+
+  it('keeps the Goal command detail copy stable', () => {
+    expect(SLASH_COMMANDS.find((command) => command.id === 'goal')?.description).toBe(
+      'Set a goal and keep working towards it',
+    )
   })
 
   it('matches by name prefix case-insensitively', () => {

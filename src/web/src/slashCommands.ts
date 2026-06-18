@@ -5,10 +5,9 @@
 // token-detection / filter helpers so the matching logic stays unit-testable and
 // decoupled from the Vue component.
 //
-// MVP ships a single command (`/model`); the shape is intentionally generic so
-// more commands (agent, compact, fork, ...) can be added without touching the
-// menu UI. `kind` tells the composer how a chosen command resolves — for now
-// the only resolution is opening the model picker.
+// The shape is intentionally generic so more commands (agent, compact, fork,
+// ...) can be added without touching the menu UI. `kind` tells the composer how
+// a chosen command resolves.
 
 export type SlashCommandKind = 'model' | 'goal'
 
@@ -29,20 +28,20 @@ export interface SlashCommand {
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   {
+    id: 'goal',
+    name: 'goal',
+    title: 'Goal',
+    description: 'Set a goal and keep working towards it',
+    aliases: ['goals', 'objective'],
+    kind: 'goal',
+  },
+  {
     id: 'model',
     name: 'model',
     title: 'Model',
     description: 'Switch the active model',
     aliases: ['models'],
     kind: 'model',
-  },
-  {
-    id: 'goal',
-    name: 'goal',
-    title: 'Goal',
-    description: 'Set the active session goal',
-    aliases: ['goals', 'objective'],
-    kind: 'goal',
   },
 ]
 
@@ -82,17 +81,21 @@ export function slashTokenAt(text: string, caret: number): SlashToken | null {
 }
 
 /**
- * Commands whose name, title, or aliases contain `query` (case-insensitive).
- * An empty query returns every command, preserving registry order.
+ * Commands whose name, title, or aliases contain `query` (case-insensitive),
+ * ordered alphabetically by title.
  */
 export function filterSlashCommands(
   query: string,
   commands: readonly SlashCommand[] = SLASH_COMMANDS,
 ): SlashCommand[] {
   const needle = query.trim().toLowerCase()
-  if (!needle) return [...commands]
-  return commands.filter((command) => {
+  const matches = !needle ? commands : commands.filter((command) => {
     const haystacks = [command.name, command.title, ...(command.aliases ?? [])]
     return haystacks.some((value) => value.toLowerCase().includes(needle))
+  })
+  return [...matches].sort((left, right) => {
+    const byTitle = left.title.localeCompare(right.title, undefined, { sensitivity: 'base' })
+    if (byTitle !== 0) return byTitle
+    return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
   })
 }

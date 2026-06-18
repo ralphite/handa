@@ -687,7 +687,7 @@ const slashMenuItems = computed<SlashMenuItem[]>(() => {
       id: command.id,
       title: command.title,
       icon: SLASH_COMMAND_ICONS[command.kind],
-      hint: command.kind === 'model' ? selectedModelLabel.value : undefined,
+      subtitle: command.kind === 'model' ? selectedModelLabel.value : command.description,
     }))
   }
   if (slashLevel.value === 'model') {
