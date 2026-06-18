@@ -94,6 +94,7 @@ const {
 } = useThemeSettings()
 
 const leftSideBarCollapsed = ref(false)
+const leftSideBarExpandedOnNarrow = ref(false)
 const activeArtifactId = ref('')
 
 const settingsOpen = ref(false)
@@ -102,6 +103,7 @@ const searchOpen = ref(false)
 const settingsInitialSection = ref<SettingsSection>('theme')
 const archivedOpen = ref(false) // Wait, we don't need archivedOpen as a main view state anymore.
 const browserPreviewOpen = ref(false)
+const rightSidebarOpenOnNarrow = ref(false)
 const isNarrowViewport = ref(false)
 const composerDrafts = ref<Record<string, string>>({})
 // Server-side attachments to prefill into a session's composer, keyed the same
@@ -325,7 +327,9 @@ function handleForkSession(sourceTurnId?: string, options?: { includeSourceTurn?
   })()
 }
 
-const effectiveLeftSideBarCollapsed = computed(() => leftSideBarCollapsed.value || isNarrowViewport.value)
+const effectiveLeftSideBarCollapsed = computed(() =>
+  isNarrowViewport.value ? !leftSideBarExpandedOnNarrow.value : leftSideBarCollapsed.value,
+)
 const showNewChatPage = computed(() => Boolean(draftProjectId.value))
 
 // New chat has no runtime usage yet; preview the static prompt (instruction,
@@ -410,11 +414,23 @@ const rightSidebarHidden = computed(() => {
   return !rightSidebarAutoOpened.has(activeSessionId.value)
 })
 const showRightSidebar = computed(() =>
-  !rightSidebarHidden.value && !showNewChatPage.value && !isNarrowViewport.value,
+  !showNewChatPage.value && (isNarrowViewport.value ? rightSidebarOpenOnNarrow.value : !rightSidebarHidden.value),
 )
+
+function toggleLeftSideBar() {
+  if (isNarrowViewport.value) {
+    leftSideBarExpandedOnNarrow.value = !leftSideBarExpandedOnNarrow.value
+    return
+  }
+  leftSideBarCollapsed.value = !leftSideBarCollapsed.value
+}
 
 function toggleRightSidebar() {
   animateRightSidebar.value = true
+  if (isNarrowViewport.value) {
+    rightSidebarOpenOnNarrow.value = !rightSidebarOpenOnNarrow.value
+    return
+  }
   rightSidebarHiddenBySession.set(activeSessionId.value, !rightSidebarHidden.value)
 }
 
@@ -565,10 +581,20 @@ watch(
   () => activeSessionId.value,
   () => {
     activeArtifactId.value = ''
+    rightSidebarOpenOnNarrow.value = false
     syncArtifactFromUrl()
     // Switching sessions snaps the right sidebar into place; only a manual toggle
     // (handled in toggleRightSidebar) animates the width.
     animateRightSidebar.value = false
+  },
+)
+
+watch(
+  () => isNarrowViewport.value,
+  (isNarrow) => {
+    if (!isNarrow) return
+    leftSideBarExpandedOnNarrow.value = false
+    rightSidebarOpenOnNarrow.value = false
   },
 )
 
@@ -818,7 +844,7 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
       :automated-tasks-active="automatedTasksOpen"
       :search-open="searchOpen"
       :folded-project-ids="foldedProjectIds"
-      @toggle="leftSideBarCollapsed = !leftSideBarCollapsed"
+      @toggle="toggleLeftSideBar"
       @add-project="addProject"
       @rename-project="renameProjectDisplayName"
       @remove-project="removeProjectFromHanda"
