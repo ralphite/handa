@@ -1187,11 +1187,11 @@ def test_web_api_lists_agent_definitions(tmp_path, monkeypatch):
 
   by_id = {agent["id"]: agent for agent in agents}
   assert by_id["browser"]["runtime"] == "native"
-  assert by_id["browser"]["label"] == "browser"
+  assert by_id["browser"]["label"] == "Browser"
   assert by_id["orca"]["runtime"] == "native"
   assert by_id["orca"]["label"] == "Orca"
   assert by_id["ralph"]["runtime"] == "native"
-  assert by_id["ralph"]["label"] == "ralph"
+  assert by_id["ralph"]["label"] == "Ralph"
 
 
 def test_web_api_agent_catalog(tmp_path, monkeypatch):
