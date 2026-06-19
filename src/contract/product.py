@@ -14,7 +14,6 @@ from ..agent_runtime import resolve_agent_id_for_runtime as resolve_agent_id_for
 from ..agent_runtime import DEFAULT_WEB_AGENT_ID as DEFAULT_AGENT_ID
 from ..agents.browser.loader import MAIN_CONFIG_PATH as BROWSER_MAIN_CONFIG_PATH
 from ..agents.orca.loader import MAIN_CONFIG_PATH as ORCA_MAIN_CONFIG_PATH
-from ..agents.ralph.loader import MAIN_CONFIG_PATH as RALPH_MAIN_CONFIG_PATH
 from ..agents.skill_prompt import render_skill_instructions as render_skill_instructions
 from ..config import AgentConfig as AgentConfig
 from ..config import agent_config_artifact_filename as agent_config_artifact_filename
@@ -38,7 +37,6 @@ def load_agent_config_for_agent(agent_id: str) -> AgentConfig | None:
   path = {
       "orca": ORCA_MAIN_CONFIG_PATH,
       "browser": BROWSER_MAIN_CONFIG_PATH,
-      "ralph": RALPH_MAIN_CONFIG_PATH,
   }.get(normalized)
   return load_agent_config_from_path(path) if path is not None else None
 

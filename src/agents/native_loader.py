@@ -13,12 +13,10 @@ NativeAgentRunner = Callable[..., Awaitable[RunOutcome]]
 def list_agent_definitions() -> list[AgentDefinition]:
   from .browser.loader import list_agent_definitions as list_browser_definitions
   from .orca.loader import list_agent_definitions as list_orca_definitions
-  from .ralph.loader import list_agent_definitions as list_ralph_definitions
 
   return [
       *list_orca_definitions(),
       *list_browser_definitions(),
-      *list_ralph_definitions(),
   ]
 
 
@@ -30,10 +28,6 @@ def load_agent(agent_id: str) -> NativeAgentRunner:
     return load_agent(normalized)
   if normalized == "browser":
     from .browser.loader import load_agent
-
-    return load_agent(normalized)
-  if normalized == "ralph":
-    from .ralph.loader import load_agent
 
     return load_agent(normalized)
   available = ", ".join(sorted(definition.id for definition in list_agent_definitions()))

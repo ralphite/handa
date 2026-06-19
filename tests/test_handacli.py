@@ -228,7 +228,7 @@ def test_run_handa_cli_passes_session_agent_and_model_config():
       project_name="p",
       prompt="hello",
       session_id="sess-1",
-      agent_id="ralph",
+      agent_id="browser",
       model_config_id="gemini-fast",
   )
 
@@ -236,7 +236,7 @@ def test_run_handa_cli_passes_session_agent_and_model_config():
   assert api.submitted_form == {
       "input_text": ["hello"],
       "project_id": ["proj-1"],
-      "agent_id": ["ralph"],
+      "agent_id": ["browser"],
       "session_id": ["sess-1"],
       "model_config_id": ["gemini-fast"],
   }
@@ -408,7 +408,7 @@ def test_handacli_main_prints_json_from_model(monkeypatch, capsys, tmp_path):
 
 def test_handacli_main_returns_failed_json_on_exception(monkeypatch, capsys):
   async def fake_run_handa_cli(**kwargs):
-    assert kwargs["agent_id"] == "ralph"
+    assert kwargs["agent_id"] == "browser"
     raise RuntimeError("boom")
 
   monkeypatch.setattr(handacli, "run_handa_cli", fake_run_handa_cli)
@@ -420,7 +420,7 @@ def test_handacli_main_returns_failed_json_on_exception(monkeypatch, capsys):
           "--session",
           "session-1",
           "--agent",
-          "ralph",
+          "browser",
           "--prompt",
           "hello",
           "--json",

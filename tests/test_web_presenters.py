@@ -196,7 +196,6 @@ def test_project_runtime_event_drops_lifecycle_kinds():
       ("native", "orca.checkpoint"),
       ("native", "browser.started"),
       ("native", "browser.history_boundary"),
-      ("native", "ralph.started"),
   ):
     event = {"id": "evt-1", "kind": kind, "summary": "noise", "payload": {}}
     assert project_runtime_event(event, runtime=runtime) == []

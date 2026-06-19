@@ -8,17 +8,14 @@ def test_agent_registry_lists_native_agents_only():
   listed = list_agent_definitions()
   definitions = {definition.id: definition for definition in listed}
 
-  assert [definition.id for definition in listed] == ["orca", "browser", "ralph"]
-  assert set(definitions) == {"browser", "orca", "ralph"}
+  assert [definition.id for definition in listed] == ["orca", "browser"]
+  assert set(definitions) == {"browser", "orca"}
   assert definitions["browser"].runtime == "native"
   assert definitions["browser"].entrypoint == "src.agents.browser.runner:run"
   assert definitions["browser"].label == "Browser"
   assert definitions["orca"].runtime == "native"
   assert definitions["orca"].entrypoint == "src.agents.orca.runner:run"
   assert definitions["orca"].label == "Orca"
-  assert definitions["ralph"].runtime == "native"
-  assert definitions["ralph"].entrypoint == "src.agents.ralph.runner:run"
-  assert definitions["ralph"].label == "Ralph"
 
 
 def test_agent_definition_excludes_entrypoint_from_model_dump():
@@ -27,4 +24,3 @@ def test_agent_definition_excludes_entrypoint_from_model_dump():
   assert definition.runtime == "native"
   assert "entrypoint" not in definition.model_dump()
   assert get_agent_definition("browser").runtime == "native"
-  assert get_agent_definition("ralph").runtime == "native"

@@ -7,12 +7,11 @@ describe('agent defaults', () => {
   })
 
   it('orders and labels composer agents', () => {
-    expect(COMPOSER_AGENT_ORDER).toEqual(['orca', 'browser', 'ralph'])
-    expect(COMPOSER_AGENT_IDS.has('ralph')).toBe(true)
+    expect(COMPOSER_AGENT_ORDER).toEqual(['orca', 'browser'])
+    expect(COMPOSER_AGENT_IDS.has('ralph')).toBe(false)
     expect(COMPOSER_AGENT_LABELS).toMatchObject({
       orca: 'Orca',
       browser: 'Browser',
-      ralph: 'Ralph',
     })
   })
 })

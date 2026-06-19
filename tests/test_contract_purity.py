@@ -15,7 +15,6 @@ FORBIDDEN_MODULE_PREFIXES = (
     "src.agent_run_worker",
     "src.task_worker",
     "src.agents.orca.runner",
-    "src.agents.ralph.runner",
     "src.agents.browser.runner",
     "src.agents.orca.tools",
     "src.agents.config_runner",

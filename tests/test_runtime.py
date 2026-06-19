@@ -549,9 +549,9 @@ def test_run_agent_task_creates_child_session(tmp_path, monkeypatch):
   )
 
   task = start_run_agent_task(
-      agent_id="ralph",
-      prompt="Run ralph.",
-      context="Use the real registered Ralph agent.",
+      agent_id="browser",
+      prompt="Run browser.",
+      context="Use the real registered Browser agent.",
       session_id=session_id,
       user_id="user",
       app_name="handa",
@@ -562,11 +562,11 @@ def test_run_agent_task_creates_child_session(tmp_path, monkeypatch):
   )
 
   assert task["kind"] == "run_agent"
-  assert task["agent_id"] == "ralph"
+  assert task["agent_id"] == "browser"
   assert task["worker_pid"] == 12345
   assert child is not None
   assert child.state["handa:session_kind"] == "run_agent_child"
-  assert child.state["handa:target_agent_id"] == "ralph"
+  assert child.state["handa:target_agent_id"] == "browser"
   assert task["agent_runtime"] == "native"
   assert child.state["handa:agent_runtime"] == "native"
   assert child.state["handa:agent_run_depth"] == 2
@@ -621,7 +621,7 @@ def test_system_agent_run_task_creates_immutable_config_child_session(
 
   task = start_system_agent_run_task(
       config={
-          "name": "ralph_verifier",
+          "name": "system_verifier",
           "model_config_id": "gemini-3.1-pro-low",
           "description": "System verifier.",
           "tools": [],
@@ -638,15 +638,15 @@ def test_system_agent_run_task_creates_immutable_config_child_session(
   )
 
   assert task["kind"] == "system_agent_run"
-  assert task["config_name"] == "ralph_verifier"
-  assert task["config"]["name"] == "ralph_verifier"
+  assert task["config_name"] == "system_verifier"
+  assert task["config"]["name"] == "system_verifier"
   assert task["model_config_id"] == "gemini-3.1-pro-low"
   assert task["config"]["model_config_id"] == "gemini-3.1-pro-low"
   assert task["save_parent_summary"] is False
   assert task["worker_pid"] == 12345
   assert child is not None
   assert child.state["handa:session_kind"] == "system_agent_run_child"
-  assert child.state["handa:system_agent_config_name"] == "ralph_verifier"
+  assert child.state["handa:system_agent_config_name"] == "system_verifier"
   assert child.state["handa:model_config_id"] == "gemini-3.1-pro-low"
 
 

@@ -663,8 +663,8 @@ async def _assert_run_agent_tool_creates_agent_task(tmp_path, monkeypatch):
   )
 
   run = await agents.run_agent(
-      agent_id="ralph",
-      prompt="Run ralph.",
+      agent_id="browser",
+      prompt="Run browser.",
       tool_context=context,
   )
   child = HandaSessionService(root=str(root))._read_session(run["child_session_id"])
@@ -674,10 +674,10 @@ async def _assert_run_agent_tool_creates_agent_task(tmp_path, monkeypatch):
   )
 
   assert run["status"] == "queued"
-  assert run["agent_id"] == "ralph"
+  assert run["agent_id"] == "browser"
   assert child is not None
   assert child.state["handa:session_kind"] == "run_agent_child"
-  assert child.state["handa:target_agent_id"] == "ralph"
+  assert child.state["handa:target_agent_id"] == "browser"
   assert status["task"]["kind"] == "run_agent"
 
   context.session.state["handa:agent_run_depth"] = 3

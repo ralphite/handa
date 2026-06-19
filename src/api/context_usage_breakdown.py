@@ -11,7 +11,6 @@ from ..contract.product import AgentConfig
 from ..contract.product import agent_config_artifact_filename
 from ..contract.product import BROWSER_MAIN_CONFIG_PATH
 from ..contract.product import ORCA_MAIN_CONFIG_PATH
-from ..contract.product import RALPH_MAIN_CONFIG_PATH
 from ..contract.product import load_agent_config_from_path
 from ..contract.product import render_instruction
 from ..contract.product import render_project_agents_instruction
@@ -272,7 +271,6 @@ def load_agent_config_for_agent(agent_id: str) -> AgentConfig | None:
   config_paths = {
       "orca": ORCA_MAIN_CONFIG_PATH,
       "browser": BROWSER_MAIN_CONFIG_PATH,
-      "ralph": RALPH_MAIN_CONFIG_PATH,
   }
   path = config_paths.get(agent_id)
   return load_agent_config_from_path(path) if path is not None else None

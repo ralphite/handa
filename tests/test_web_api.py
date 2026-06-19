@@ -1190,8 +1190,6 @@ def test_web_api_lists_agent_definitions(tmp_path, monkeypatch):
   assert by_id["browser"]["label"] == "Browser"
   assert by_id["orca"]["runtime"] == "native"
   assert by_id["orca"]["label"] == "Orca"
-  assert by_id["ralph"]["runtime"] == "native"
-  assert by_id["ralph"]["label"] == "Ralph"
 
 
 def test_web_api_agent_catalog(tmp_path, monkeypatch):
@@ -2068,15 +2066,15 @@ def test_background_task_manager_skips_suppressed_task_notifications(
   project_record = client.post("/api/projects", json={"root_path": str(project)}).json()
   parent = client.post(
       "/api/sessions",
-      json={"agent_id": "ralph", "project_id": project_record["id"]},
+      json={"agent_id": "orca", "project_id": project_record["id"]},
   ).json()
   task = start_system_agent_run_task(
       config={
-          "name": "ralph_builder",
+          "name": "orca_worker",
           "model_config_id": "gemini-3.5-flash",
           "tools": [],
       },
-      prompt="Run an internal Ralph node.",
+      prompt="Run an internal node.",
       session_id=parent["id"],
       user_id="user",
       app_name="handa",

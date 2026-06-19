@@ -300,7 +300,7 @@ def _agent_tools(
     """Run a registered Handa agent as a child session task.
 
     `agent_id` must be one of Handa's registered native agent definitions,
-    such as `orca`, `ralph`, or `browser`. The target agent runs in a child
+    such as `orca` or `browser`. The target agent runs in a child
     session and can be inspected through task status/result/artifacts.
     """
     normalized_agent_id = validate_agent_id(agent_id)
