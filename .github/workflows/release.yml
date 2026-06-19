@@ -1,0 +1,156 @@
+name: release
+
+# Build the self-contained Handa bundle on every supported OS using native
+# runners (native wheels like pydantic-core are platform-specific, so each OS
+# must build on its own runner), then real-launch each artifact: start the
+# bundled server, hit /api/health and /, and drive a real headless browser.
+#
+# On a v* tag this also publishes a GitHub Release with stable-named assets so
+# the one-line installers (install.sh / install.ps1) keep working.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - "scripts/package_release.sh"
+      - "scripts/package_*_release.*"
+      - "scripts/smoke_artifact.*"
+      - "scripts/browser_smoke.py"
+      - "scripts/import_check.py"
+      - "install.sh"
+      - "install.ps1"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build frontend
+        working-directory: src/web
+        # Use npm install (not npm ci) so a lockfile that is briefly out of sync
+        # with package.json — or differs by the runner's npm version for optional
+        # platform deps — does not block the build.
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: src/web/dist
+          retention-days: 3
+
+  package-unix:
+    needs: build-frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: linux-x86_64 }
+          - { os: macos-14, target: macos-arm64 }
+          # Intel macOS (macos-13) is omitted: GitHub's Intel runners are scarce
+          # and the same POSIX bundle is already covered by macos-arm64 + linux.
+          # Intel Mac users build from source (see README).
+    runs-on: ${{ matrix.os }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore prebuilt frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: src/web/dist
+      - name: Build self-contained bundle
+        run: |
+          chmod +x scripts/package_release.sh scripts/smoke_artifact.sh
+          SKIP_FRONTEND_BUILD=1 SKIP_SMOKE_TEST=1 \
+            HANDA_RELEASE_TARGET=${{ matrix.target }} \
+            bash scripts/package_release.sh
+      - name: Smoke test (launch + /api/health + real browser)
+        env:
+          PLAYWRIGHT_INSTALL_FLAGS: ${{ matrix.os == 'ubuntu-latest' && '--with-deps' || '' }}
+        run: |
+          art="$(ls tmp/release/dist/handa-*-${{ matrix.target }}.sh)"
+          bash scripts/smoke_artifact.sh --browser "$art"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: handa-${{ matrix.target }}
+          path: |
+            tmp/release/dist/handa-*-${{ matrix.target }}.sh
+            tmp/release/dist/handa-*-${{ matrix.target }}.sh.sha256
+          retention-days: 7
+
+  package-windows:
+    needs: build-frontend
+    runs-on: windows-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore prebuilt frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: src/web/dist
+      - name: Build self-contained bundle
+        shell: pwsh
+        run: .\scripts\package_windows_release.ps1 -SkipFrontendBuild -SkipSmokeTest
+      - name: Smoke test (launch + /api/health + real browser)
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem tmp/release/dist/handa-*-windows-x86_64.zip | Select-Object -First 1
+          .\scripts\smoke_artifact.ps1 -Zip $zip.FullName -Browser
+      - uses: actions/upload-artifact@v4
+        with:
+          name: handa-windows-x86_64
+          path: |
+            tmp/release/dist/handa-*-windows-x86_64.zip
+            tmp/release/dist/handa-*-windows-x86_64.zip.sha256
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package-unix, package-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: handa-*
+          merge-multiple: true
+      - name: Stage stable-named assets
+        run: |
+          mkdir -p release
+          cp install.sh install.ps1 release/
+          # Keep versioned assets for provenance and add stable names the
+          # installers can rely on (handa-<target>.sh / .zip).
+          for f in artifacts/handa-*-macos-arm64.sh;   do cp "$f" "release/$(basename "$f")"; cp "$f" release/handa-macos-arm64.sh; done
+          for f in artifacts/handa-*-linux-x86_64.sh;  do cp "$f" "release/$(basename "$f")"; cp "$f" release/handa-linux-x86_64.sh; done
+          for f in artifacts/handa-*-windows-x86_64.zip; do cp "$f" "release/$(basename "$f")"; cp "$f" release/handa-windows-x86_64.zip; done
+          ls -lh release
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

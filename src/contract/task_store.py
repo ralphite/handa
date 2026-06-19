@@ -406,6 +406,24 @@ def spawn_web_turn_worker(
 def is_process_alive(pid: Any) -> bool:
   return _is_process_alive(pid)
 
+
+def _terminate_process_tree(pid: int) -> None:
+  """Terminate a worker and its descendants cross-platform.
+
+  POSIX workers are spawned with start_new_session=True, so they lead their own
+  process group and killpg reaches the whole tree. Windows has no process
+  groups, so terminate the tree with taskkill /T.
+  """
+  if hasattr(os, "killpg"):
+    os.killpg(pid, 15)
+  else:
+    subprocess.run(
+        ["taskkill", "/T", "/F", "/PID", str(pid)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
 def task_result_file(
     task_id: str,
     *,
@@ -507,7 +525,7 @@ def cancel_task(
   if not pid:
     return {"success": False, "task_id": task_id, "error": "no pid recorded"}
   try:
-    os.killpg(pid, 15)
+    _terminate_process_tree(pid)
   except ProcessLookupError:
     pass
   except PermissionError as exc:
