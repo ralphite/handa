@@ -146,8 +146,12 @@ function handleWheel(event: WheelEvent) {
   }, 80)
 }
 
-function connectStream() {
-  closeStream()
+function connectStream(options?: { keepFrame?: boolean }) {
+  stopSocket()
+  // Keep the last frame visible across transient reconnects so the surface never blinks
+  // back to the placeholder or stale screenshot. Only drop it when the stream target
+  // itself changes (the streamUrl watcher calls this with no options).
+  if (!options?.keepFrame) clearLiveFrame()
   if (!streamUrl.value) return
   const socket = new WebSocket(streamUrl.value)
   streamSocket = socket
@@ -178,7 +182,7 @@ function connectStream() {
   }
 }
 
-function closeStream() {
+function stopSocket() {
   if (reconnectTimer !== undefined) {
     window.clearTimeout(reconnectTimer)
     reconnectTimer = undefined
@@ -188,6 +192,10 @@ function closeStream() {
     streamSocket = null
     socket.close()
   }
+}
+
+function closeStream() {
+  stopSocket()
   clearLiveFrame()
 }
 
@@ -195,7 +203,7 @@ function scheduleReconnect() {
   if (!streamUrl.value || reconnectTimer !== undefined) return
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = undefined
-    connectStream()
+    connectStream({ keepFrame: true })
   }, 1200)
 }
 
@@ -318,11 +326,17 @@ function clampInt(value: number, min: number, max: number) {
 <template>
   <article class="flex h-full min-w-0 flex-col bg-background">
     <div ref="containerRef" class="flex min-h-0 flex-1 items-center justify-center bg-background p-3">
+      <!-- The surface always fills the available panel, so its box never changes size as
+           frames load, reconnect, or clear. The frame is shown at its true aspect ratio
+           (object-contain), so any momentary mismatch between the backend viewport and the
+           panel letterboxes for an instant instead of stretching the page out of shape. -->
       <div
-        v-if="renderedSrc"
         ref="frameRef"
-        class="relative h-full w-full overflow-hidden rounded-md border bg-white outline-none"
-        :class="focused ? 'border-[color:var(--accent)] ring-2 ring-[color:var(--accent-soft)]' : 'border-[color:var(--border-muted)]'"
+        class="relative h-full w-full overflow-hidden rounded-md border outline-none"
+        :class="[
+          renderedSrc ? 'bg-white' : 'border-dashed bg-[var(--surface-muted)]',
+          focused ? 'border-[color:var(--accent)] ring-2 ring-[color:var(--accent-soft)]' : 'border-[color:var(--border-muted)]',
+        ]"
         role="application"
         tabindex="0"
         aria-label="Browser surface"
@@ -334,18 +348,19 @@ function clampInt(value: number, min: number, max: number) {
         @wheel.prevent.stop="handleWheel"
       >
         <img
-          class="pointer-events-none h-full w-full object-fill"
+          v-if="renderedSrc"
+          class="pointer-events-none h-full w-full object-contain"
           :src="renderedSrc"
           alt=""
           draggable="false"
         />
-      </div>
-      <div
-        v-else
-        class="flex aspect-video w-full max-w-5xl flex-col items-center justify-center gap-2 rounded-md border border-dashed border-[color:var(--border-muted)] bg-[var(--surface-muted)] px-4 text-center text-[color:var(--text-faint)]"
-      >
-        <ImageOff :size="24" />
-        <span v-if="browser.lastError" class="max-w-full truncate text-[12px] text-destructive">{{ browser.lastError }}</span>
+        <div
+          v-else
+          class="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-[color:var(--text-faint)]"
+        >
+          <ImageOff :size="24" />
+          <span v-if="browser.lastError" class="max-w-full truncate text-[12px] text-destructive">{{ browser.lastError }}</span>
+        </div>
       </div>
     </div>
   </article>
