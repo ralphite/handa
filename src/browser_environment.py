@@ -4,6 +4,7 @@ import asyncio
 import base64
 from collections.abc import AsyncIterator
 import json
+import math
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -166,6 +167,61 @@ class BrowserEnvironmentManager:
                 page,
                 status="open",
                 last_action=f"Clicked at {pixel_x},{pixel_y}",
+            )
+
+    async def drag(
+        self,
+        *,
+        session_id: str,
+        x: float,
+        y: float,
+        x2: float,
+        y2: float,
+        button: str = "left",
+        capture_screenshot: bool = True,
+    ) -> dict[str, Any]:
+        x = _clamp_float(x, 0, 1)
+        y = _clamp_float(y, 0, 1)
+        x2 = _clamp_float(x2, 0, 1)
+        y2 = _clamp_float(y2, 0, 1)
+        button = _normalize_mouse_button(button)
+        async with self._session_lock(session_id):
+            page = await self._page(session_id)
+            viewport = _page_viewport(page)
+            start_x = round(viewport["width"] * x)
+            start_y = round(viewport["height"] * y)
+            end_x = round(viewport["width"] * x2)
+            end_y = round(viewport["height"] * y2)
+            # Interpolate the move so the page receives a genuine drag gesture
+            # (text selection, sliders, HTML5 drag-and-drop) instead of a
+            # teleport, and so the live screencast animates the drag for the
+            # human viewer. Scale the step count with distance, capped so long
+            # drags stay responsive.
+            distance = math.hypot(end_x - start_x, end_y - start_y)
+            steps = max(1, min(60, round(distance / 8)))
+            await self._update_state(
+                session_id,
+                status="running",
+                last_action=f"Dragging from {start_x},{start_y} to {end_x},{end_y}",
+                last_error=None,
+            )
+            await page.mouse.move(start_x, start_y)
+            await page.mouse.down(button=button)
+            await page.mouse.move(end_x, end_y, steps=steps)
+            await page.mouse.up(button=button)
+            action = f"Dragged from {start_x},{start_y} to {end_x},{end_y}"
+            if not capture_screenshot:
+                return await self._record_page_metadata(
+                    session_id,
+                    page,
+                    status="open",
+                    last_action=action,
+                )
+            return await self._record_page_state(
+                session_id,
+                page,
+                status="open",
+                last_action=action,
             )
 
     async def type(

@@ -132,9 +132,11 @@ class BrowserEnvironmentSummary(BaseModel):
 
 
 class BrowserInteractionRequest(BaseModel):
-  action: Literal["click", "type", "key", "scroll", "resize"]
+  action: Literal["click", "drag", "type", "key", "scroll", "resize"]
   x: float | None = Field(default=None, ge=0, le=1)
   y: float | None = Field(default=None, ge=0, le=1)
+  x2: float | None = Field(default=None, ge=0, le=1)
+  y2: float | None = Field(default=None, ge=0, le=1)
   button: Literal["left", "right", "middle"] = "left"
   text: str | None = None
   key: str | None = None

@@ -27,6 +27,7 @@ ALLOWED_METHODS = frozenset({
     "snapshot",
     "click",
     "click_at",
+    "drag",
     "type",
     "type_text",
     "keys",

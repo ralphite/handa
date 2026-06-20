@@ -208,6 +208,23 @@ async def _dispatch_browser_interaction(
         button=payload.button,
         capture_screenshot=capture_screenshot,
     )
+  if payload.action == "drag":
+    if (
+        payload.x is None
+        or payload.y is None
+        or payload.x2 is None
+        or payload.y2 is None
+    ):
+      raise ValueError("drag requires x, y, x2, and y2.")
+    return await manager.drag(
+        session_id=session_id,
+        x=payload.x,
+        y=payload.y,
+        x2=payload.x2,
+        y2=payload.y2,
+        button=payload.button,
+        capture_screenshot=capture_screenshot,
+    )
   if payload.action == "type":
     if not payload.text:
       raise ValueError("type requires text.")

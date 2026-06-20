@@ -27,6 +27,8 @@ def test_playwright_browser_environment_roundtrip(tmp_path):
     <label>Coord <input id="coord" placeholder="coord"></label>
     <button id="coord-save">Coord Save</button>
     <p id="coord-out"></p>
+    <div id="pad" tabindex="0" style="width:300px;height:120px;background:#eef">pad</div>
+    <p id="drag-out"></p>
     <script>
       const out = document.querySelector('#out')
       const input = document.querySelector('#name')
@@ -45,6 +47,17 @@ def test_playwright_browser_environment_roundtrip(tmp_path):
       document.querySelector('#coord-save').addEventListener('click', () => {
         localStorage.setItem('coord', coordInput.value)
         coordOut.textContent = coordInput.value
+      })
+      const pad = document.querySelector('#pad')
+      const dragOut = document.querySelector('#drag-out')
+      let dragging = false
+      let moves = 0
+      pad.addEventListener('mousedown', () => { dragging = true; moves = 0 })
+      window.addEventListener('mousemove', () => { if (dragging) moves += 1 })
+      window.addEventListener('mouseup', () => {
+        if (!dragging) return
+        dragging = false
+        dragOut.textContent = 'dragged:' + moves
       })
     </script>
   </body>
@@ -74,6 +87,7 @@ def test_playwright_browser_environment_roundtrip(tmp_path):
       snapshot = await manager.snapshot(session_id=session_id, max_elements=10)
       coord_box = next(item["bbox"] for item in snapshot["elements"] if item["selector"] == "#coord")
       coord_save_box = next(item["bbox"] for item in snapshot["elements"] if item["selector"] == "#coord-save")
+      pad_box = next(item["bbox"] for item in snapshot["elements"] if item["selector"] == "#pad")
       await manager.click_at(
           session_id=session_id,
           x=(coord_box["x"] + coord_box["width"] / 2) / 1280,
@@ -86,6 +100,16 @@ def test_playwright_browser_environment_roundtrip(tmp_path):
           y=(coord_save_box["y"] + coord_save_box["height"] / 2) / 720,
       )
       await manager.wait(session_id=session_id, text="Grace", timeout_ms=5000)
+      # A real drag must reach the page as mousedown -> mousemove(s) -> mouseup,
+      # not a teleport, so the page records the gesture.
+      await manager.drag(
+          session_id=session_id,
+          x=(pad_box["x"] + pad_box["width"] * 0.25) / 1280,
+          y=(pad_box["y"] + pad_box["height"] / 2) / 720,
+          x2=(pad_box["x"] + pad_box["width"] * 0.75) / 1280,
+          y2=(pad_box["y"] + pad_box["height"] / 2) / 720,
+      )
+      await manager.wait(session_id=session_id, text="dragged:", timeout_ms=5000)
       screenshot = await manager.screenshot(session_id=session_id)
       assert screenshot["screenshot_url"] == f"/api/sessions/{session_id}/browser/screenshot"
       await manager.close(session_id=session_id)

@@ -64,6 +64,7 @@ onUnmounted(() => {
   if (resizeSendTimer !== undefined) window.clearTimeout(resizeSendTimer)
   resizeObserver?.disconnect()
   resizeObserver = null
+  endPointerGesture()
   closeStream()
 })
 
@@ -93,19 +94,72 @@ function focusFrame() {
   void nextTick(() => frameRef.value?.focus({ preventScroll: true }))
 }
 
-function handlePointer(event: MouseEvent) {
+// Pointer gestures: a press that releases without moving past DRAG_THRESHOLD_PX
+// is a click (left/middle/right — right-clicks forward to the page's own context
+// menu); a press that moves further becomes a drag (text selection, sliders,
+// drag-and-drop). We track the gesture on window so a drag that leaves the
+// surface still completes, and we send a single interaction on release.
+const DRAG_THRESHOLD_PX = 4
+let pointerGesture:
+  | { startX: number; startY: number; rect: DOMRect; button: 'left' | 'right' | 'middle' }
+  | null = null
+let pointerDragging = false
+
+function handlePointerDown(event: MouseEvent) {
   if (!renderedSrc.value) return
+  // Only forward the standard primary/middle/secondary buttons; ignore the
+  // browser back/forward side buttons (3 and 4) and any in-progress gesture.
+  if (event.button !== 0 && event.button !== 1 && event.button !== 2) return
+  if (pointerGesture) return
   const frame = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
   if (!frame) return
   const rect = frame.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return
+  // preventDefault stops native text selection / image drag; we focus manually.
+  event.preventDefault()
+  event.stopPropagation()
   focusFrame()
-  sendBrowserInteraction({
-    action: 'click',
-    x: clampUnit((event.clientX - rect.left) / rect.width),
-    y: clampUnit((event.clientY - rect.top) / rect.height),
-    button: mouseButton(event.button),
-  })
+  pointerGesture = { startX: event.clientX, startY: event.clientY, rect, button: mouseButton(event.button) }
+  pointerDragging = false
+  window.addEventListener('mousemove', handlePointerMove)
+  window.addEventListener('mouseup', handlePointerUp)
+}
+
+function handlePointerMove(event: MouseEvent) {
+  if (!pointerGesture || pointerDragging) return
+  const dx = event.clientX - pointerGesture.startX
+  const dy = event.clientY - pointerGesture.startY
+  if (Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX) pointerDragging = true
+}
+
+function handlePointerUp(event: MouseEvent) {
+  const gesture = pointerGesture
+  const dragging = pointerDragging
+  endPointerGesture()
+  if (!gesture) return
+  const { rect } = gesture
+  if (rect.width <= 0 || rect.height <= 0) return
+  const x = clampUnit((gesture.startX - rect.left) / rect.width)
+  const y = clampUnit((gesture.startY - rect.top) / rect.height)
+  if (dragging) {
+    sendBrowserInteraction({
+      action: 'drag',
+      x,
+      y,
+      x2: clampUnit((event.clientX - rect.left) / rect.width),
+      y2: clampUnit((event.clientY - rect.top) / rect.height),
+      button: gesture.button,
+    })
+    return
+  }
+  sendBrowserInteraction({ action: 'click', x, y, button: gesture.button })
+}
+
+function endPointerGesture() {
+  pointerGesture = null
+  pointerDragging = false
+  window.removeEventListener('mousemove', handlePointerMove)
+  window.removeEventListener('mouseup', handlePointerUp)
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -343,7 +397,7 @@ function clampInt(value: number, min: number, max: number) {
         @blur="focused = false"
         @contextmenu.prevent
         @keydown="handleKeydown"
-        @mousedown.prevent.stop="handlePointer"
+        @mousedown="handlePointerDown"
         @paste="handlePaste"
         @wheel.prevent.stop="handleWheel"
       >

@@ -1702,6 +1702,10 @@ def test_browser_environment_routes_forward_interactions(tmp_path, monkeypatch):
       self.calls.append(("click_at", kwargs))
       return browser_response(str(kwargs["session_id"]), "Clicked")
 
+    async def drag(self, **kwargs):
+      self.calls.append(("drag", kwargs))
+      return browser_response(str(kwargs["session_id"]), "Dragged")
+
     async def type_text(self, **kwargs):
       self.calls.append(("type_text", kwargs))
       return browser_response(str(kwargs["session_id"]), "Typed")
@@ -1765,20 +1769,27 @@ def test_browser_environment_routes_forward_interactions(tmp_path, monkeypatch):
       f"/api/sessions/{session['id']}/browser/interactions",
       json={"action": "scroll", "delta_y": 420},
   )
+  drag = client.post(
+      f"/api/sessions/{session['id']}/browser/interactions",
+      json={"action": "drag", "x": 0.1, "y": 0.2, "x2": 0.6, "y2": 0.8, "button": "left"},
+  )
 
   assert refresh.status_code == 200
   assert click.status_code == 200
   assert typed.status_code == 200
   assert key.status_code == 200
   assert scroll.status_code == 200
+  assert drag.status_code == 200
   assert fake.calls == [
       ("refresh", {"session_id": session["id"]}),
       ("click_at", {"session_id": session["id"], "x": 0.25, "y": 0.5, "button": "right", "capture_screenshot": True}),
       ("type_text", {"session_id": session["id"], "text": "Ada", "capture_screenshot": True}),
       ("press_keys", {"session_id": session["id"], "keys": "Enter", "capture_screenshot": True}),
       ("wheel", {"session_id": session["id"], "delta_x": 0, "delta_y": 420, "capture_screenshot": True}),
+      ("drag", {"session_id": session["id"], "x": 0.1, "y": 0.2, "x2": 0.6, "y2": 0.8, "button": "left", "capture_screenshot": True}),
   ]
   assert scroll.json()["last_action"] == "Scrolled"
+  assert drag.json()["last_action"] == "Dragged"
 
 
 def test_browser_environment_websocket_streams_frames_and_interactions(tmp_path, monkeypatch):
@@ -1803,6 +1814,10 @@ def test_browser_environment_websocket_streams_frames_and_interactions(tmp_path,
     async def click_at(self, **kwargs):
       self.calls.append(("click_at", kwargs))
       return browser_response(str(kwargs["session_id"]), "Clicked")
+
+    async def drag(self, **kwargs):
+      self.calls.append(("drag", kwargs))
+      return browser_response(str(kwargs["session_id"]), "Dragged")
 
     async def set_viewport(self, *, session_id, width, height, capture_screenshot=False):
       self.calls.append((
@@ -1859,6 +1874,8 @@ def test_browser_environment_websocket_streams_frames_and_interactions(tmp_path,
     resize_summary = websocket.receive_json()
     websocket.send_json({"action": "click", "x": 0.2, "y": 0.3})
     summary = websocket.receive_json()
+    websocket.send_json({"action": "drag", "x": 0.1, "y": 0.2, "x2": 0.5, "y2": 0.6})
+    drag_summary = websocket.receive_json()
 
   assert ready["type"] == "ready"
   assert ready["summary"]["stream_url"] == f"/api/sessions/{session['id']}/browser/stream"
@@ -1867,12 +1884,15 @@ def test_browser_environment_websocket_streams_frames_and_interactions(tmp_path,
   assert resize_summary["summary"]["last_action"] == "Resized"
   assert summary["type"] == "summary"
   assert summary["summary"]["last_action"] == "Clicked"
+  assert drag_summary["type"] == "summary"
+  assert drag_summary["summary"]["last_action"] == "Dragged"
   sid = session["id"]
-  assert fake.calls[:4] == [
+  assert fake.calls[:5] == [
       ("ensure_live", {"session_id": sid}),
       ("stream_frames", {"session_id": sid}),
       ("set_viewport", {"session_id": sid, "width": 800, "height": 900, "capture_screenshot": False}),
       ("click_at", {"session_id": sid, "x": 0.2, "y": 0.3, "button": "left", "capture_screenshot": False}),
+      ("drag", {"session_id": sid, "x": 0.1, "y": 0.2, "x2": 0.5, "y2": 0.6, "button": "left", "capture_screenshot": False}),
   ]
   # On disconnect the live viewport is restored to the default 16:9 size.
   assert fake.calls[-1] == (

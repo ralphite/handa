@@ -232,6 +232,7 @@ export interface AgentBrowserEnvironment {
 
 export type BrowserInteraction =
   | { action: 'click'; x: number; y: number; button?: 'left' | 'right' | 'middle' }
+  | { action: 'drag'; x: number; y: number; x2: number; y2: number; button?: 'left' | 'right' | 'middle' }
   | { action: 'type'; text: string }
   | { action: 'key'; key: string }
   | { action: 'scroll'; delta_x?: number; delta_y?: number }

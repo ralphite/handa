@@ -50,6 +50,9 @@ class BrowserDaemonClient:
   async def click_at(self, *, session_id: str, **kwargs: Any) -> dict[str, Any]:
     return await self._call(session_id, "click_at", spawn=True, **kwargs)
 
+  async def drag(self, *, session_id: str, **kwargs: Any) -> dict[str, Any]:
+    return await self._call(session_id, "drag", spawn=True, **kwargs)
+
   async def type(self, *, session_id: str, **kwargs: Any) -> dict[str, Any]:
     return await self._call(session_id, "type", spawn=True, **kwargs)
 
