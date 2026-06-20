@@ -10,6 +10,10 @@
   Downloads the self-contained release (no Python/Node needed), unpacks it under
   %LOCALAPPDATA%\Handa, and writes a handa.cmd launcher shim.
 
+  The handa.cmd launcher supervises the server (auto-restart on crash) and binds
+  0.0.0.0 by default so the UI is reachable from other devices on the network.
+  Run `handa --host 127.0.0.1` to bind loopback only.
+
   Env overrides: HANDA_REPO, HANDA_VERSION, HANDA_HOME.
 #>
 
@@ -45,7 +49,25 @@ $runCmd = Get-ChildItem -Path $releases -Recurse -Filter "run.cmd" | Select-Obje
 if (-not $runCmd) { throw "run.cmd not found in downloaded bundle" }
 
 $shim = Join-Path $binDir "handa.cmd"
-"@echo off`r`n`"$($runCmd.FullName)`" %*" | Set-Content -Encoding ascii $shim
+# Supervise the server (auto-restart on crash) and bind 0.0.0.0 by default so
+# the UI is reachable from other devices on the network. A caller-supplied
+# --host wins; a clean exit or Ctrl-C stops the loop.
+$shimLines = @(
+  '@echo off',
+  'setlocal enableextensions',
+  "set `"HANDA_RUN=$($runCmd.FullName)`"",
+  'set "HANDA_HOST_ARG=--host 0.0.0.0"',
+  'echo %* | findstr /C:"--host" >nul && set "HANDA_HOST_ARG="',
+  ':handa_loop',
+  '"%HANDA_RUN%" %HANDA_HOST_ARG% %*',
+  'set "HANDA_STATUS=%ERRORLEVEL%"',
+  'if "%HANDA_STATUS%"=="0" goto :eof',
+  'if "%HANDA_STATUS%"=="-1073741510" goto :eof',
+  'echo handa: server exited [status %HANDA_STATUS%], restarting in 2s...',
+  'timeout /t 2 /nobreak >nul',
+  'goto handa_loop'
+)
+$shimLines | Set-Content -Encoding ascii $shim
 
 Write-Host ""
 Write-Host "Handa installed."
