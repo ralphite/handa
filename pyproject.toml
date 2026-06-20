@@ -27,6 +27,7 @@ obs = [
 handacli = "src.handacli:main"
 handa-web-api = "src.api.app:main"
 handa-reverse-spec = "src.reverse_spec_cli:main"
+handa-agents = "src.agent_manager:main"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
