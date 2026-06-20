@@ -1,6 +1,5 @@
 {
   "name": "browser",
-  "model_config_id": "gemini-3.5-flash",
   "description": "A browser-automation agent for navigating websites, filling forms, clicking, taking screenshots, and extracting page data. Other agents delegate browser tasks to it via run_agent.",
   "tools": [
     "browser_open",

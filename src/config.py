@@ -7,7 +7,6 @@ from pathlib import Path
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
-from pydantic import model_validator
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -29,7 +28,6 @@ _WRITE_INTENT_PATTERN = re.compile(
 
 class AgentConfig(BaseModel):
   name: str = Field(pattern=AGENT_NAME_PATTERN)
-  model_config_id: str | None = None
   description: str = ""
   tools: list[str] = Field(default_factory=list)
   skills: list[str] = Field(default_factory=list)
@@ -37,25 +35,6 @@ class AgentConfig(BaseModel):
   instruction_sections: list[str] = Field(default_factory=list)
   custom_instruction: str | None = None
   hooks: list[dict] = Field(default_factory=list)
-
-  @model_validator(mode="before")
-  @classmethod
-  def _migrate_legacy_model_field(cls, data: object) -> object:
-    """Fold the pre-rename `model` key into `model_config_id`.
-
-    `model` was this field's original name before it became `model_config_id`;
-    `*.agent.json` artifacts persisted before the rename may still carry it.
-    Accept it as a read-time alias (the new name wins when both are present) so
-    those configs keep resolving their model. Nothing writes `model` back, so
-    re-saving a migrated config drops the legacy key.
-    """
-    if not isinstance(data, dict) or "model" not in data:
-      return data
-    legacy = data["model"]
-    migrated = {key: value for key, value in data.items() if key != "model"}
-    if legacy and not migrated.get("model_config_id"):
-      migrated["model_config_id"] = legacy
-    return migrated
 
   @field_validator("instruction_sections")
   @classmethod
@@ -92,48 +71,6 @@ def agent_config_warnings(config: AgentConfig) -> list[str]:
           f"{', '.join(sorted(WRITE_CAPABLE_TOOLS))}, or require an inline answer."
       )
   return warnings
-
-
-def resolve_agent_config_model_config_id(
-    config: AgentConfig,
-    *,
-    inherited_model_config_id: str | None = None,
-    allow_config_model: bool = True,
-) -> str:
-  """Resolve the model config id for a runnable AgentConfig.
-
-  When `allow_config_model=False` the config's model is ignored and the
-  inherited model is used. Otherwise the config's `model_config_id` is used and
-  must name a supported model config; this is the strict path for
-  predefined/system configs where an unknown model is a config error worth
-  surfacing.
-  """
-  from .model_configs import validate_model_config_id
-
-  configured = config.model_config_id if allow_config_model else None
-  return validate_model_config_id(configured or inherited_model_config_id)
-
-
-def resolve_generated_agent_model_config_id(
-    config: AgentConfig,
-    *,
-    inherited_model_config_id: str | None = None,
-) -> str:
-  """Resolve a generated Agent Config run's model.
-
-  The model field is optional: when the config names a supported model config
-  it wins; otherwise the run inherits the session-selected model. Unlike
-  `resolve_agent_config_model_config_id`, an unsupported config model falls
-  back to the inherited model instead of raising — generated configs may carry
-  stale or user-entered model values, and the session model is a safe default.
-  """
-  from .model_configs import is_supported_model_config_id
-  from .model_configs import validate_model_config_id
-
-  configured = config.model_config_id
-  if is_supported_model_config_id(configured):
-    return validate_model_config_id(configured)
-  return validate_model_config_id(inherited_model_config_id)
 
 
 def get_config_path() -> Path:

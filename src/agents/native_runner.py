@@ -161,9 +161,7 @@ async def run_native_agent(
       )
   )
 
-  resolved_model_config_id = validate_model_config_id(
-      model_config_id or config.model_config_id
-  )
+  resolved_model_config_id = validate_model_config_id(model_config_id)
   runtime_model_config = resolve_model_config(resolved_model_config_id)
   client = genai.Client(api_key=api_key)
   session_context = build_session_context(

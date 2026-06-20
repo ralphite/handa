@@ -14,7 +14,6 @@ from .agents.config_runner import run_config_agent
 from .agents.native_loader import load_agent as load_native_agent
 from .config import AgentConfig
 from .config import agent_config_artifact_filename
-from .config import resolve_agent_config_model_config_id
 from .contract.hooks import normalize_hooks
 from .contract.hooks import run_hooks
 from .observability import trace_span
@@ -109,31 +108,19 @@ async def _task_config(
     parent_session_id: str,
     user_id: str,
 ) -> AgentConfig:
+  # The run's model is resolved at task-creation time and travels on
+  # `task["model_config_id"]`; the config itself no longer pins a model, so the
+  # runner reads the model from the task rather than the AgentConfig.
   if task["kind"] == "agent_run":
-    config = await _load_agent_config(
+    return await _load_agent_config(
         artifact_service=artifact_service,
         parent_session_id=parent_session_id,
         user_id=user_id,
         config_name=task["config_name"],
         config_version=task.get("config_version"),
     )
-    resolved_model_config_id = resolve_agent_config_model_config_id(
-        config,
-        inherited_model_config_id=task.get("model_config_id"),
-        allow_config_model=False,
-    )
-    normalized = config.model_dump(exclude_none=True)
-    normalized["model_config_id"] = resolved_model_config_id
-    return AgentConfig.model_validate(normalized)
   if task["kind"] == "system_agent_run":
-    config = AgentConfig.model_validate(task["config"])
-    resolved_model_config_id = resolve_agent_config_model_config_id(
-        config,
-        inherited_model_config_id=task.get("model_config_id"),
-    )
-    normalized = config.model_dump(exclude_none=True)
-    normalized["model_config_id"] = resolved_model_config_id
-    return AgentConfig.model_validate(normalized)
+    return AgentConfig.model_validate(task["config"])
   raise ValueError(f"Unsupported Agent Config task kind: {task['kind']}")
 
 

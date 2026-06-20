@@ -129,7 +129,9 @@ def test_load_agent_config_accepts_name_with_agent_json_suffix(tmp_path):
   asyncio.run(run())
 
 
-def test_generated_agent_run_ignores_legacy_model_field(tmp_path):
+def test_agent_run_task_config_loads_without_model(tmp_path):
+  # The run's model travels on the task, not the config. A legacy `model` key on
+  # the stored artifact must load without error and be dropped.
   async def run():
     service = HandaArtifactService(root=str(tmp_path / ".handa"))
     await service.save_artifact(
@@ -154,12 +156,14 @@ def test_generated_agent_run_ignores_legacy_model_field(tmp_path):
         user_id=DEFAULT_USER_ID,
     )
 
-    assert config.model_config_id == "gemini-3.5-flash-high"
+    assert config.name == "legacy_worker"
+    assert "model_config_id" not in config.model_dump()
+    assert "model" not in config.model_dump()
 
   asyncio.run(run())
 
 
-def test_system_agent_run_uses_predefined_model_config_id(tmp_path):
+def test_system_agent_run_task_config_drops_model(tmp_path):
   async def run():
     config = await _task_config(
         task={
@@ -174,7 +178,8 @@ def test_system_agent_run_uses_predefined_model_config_id(tmp_path):
         user_id=DEFAULT_USER_ID,
     )
 
-    assert config.model_config_id == "gemini-3.1-pro-low"
+    assert config.name == "research_agent"
+    assert "model_config_id" not in config.model_dump()
 
   asyncio.run(run())
 

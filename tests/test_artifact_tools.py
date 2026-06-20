@@ -259,7 +259,7 @@ def test_agents_config_tool_versions_session_artifacts(tmp_path):
   asyncio.run(_assert_agents_config_tool_versions_session_artifacts(tmp_path))
 
 
-def test_agents_save_config_tool_exposes_optional_model_config_id():
+def test_agents_save_config_tool_omits_model_parameters():
   signature = inspect.signature(
       agent_tools.build_toolset(
           ["agents_save_config"],
@@ -267,49 +267,10 @@ def test_agents_save_config_tool_exposes_optional_model_config_id():
       ).callables["agents_save_config"]
   )
 
-  # Legacy free-form `model` stays out; the canonical `model_config_id` is an
-  # optional parameter that defaults to inheriting the session model.
+  # Agent configs no longer pin a model; the run inherits the session model, so
+  # neither the canonical `model_config_id` nor the legacy `model` is a param.
+  assert "model_config_id" not in signature.parameters
   assert "model" not in signature.parameters
-  assert signature.parameters["model_config_id"].default is None
-
-
-def test_agents_save_config_persists_pinned_model(tmp_path):
-  asyncio.run(_assert_agents_save_config_persists_pinned_model(tmp_path))
-
-
-async def _assert_agents_save_config_persists_pinned_model(tmp_path):
-  root = tmp_path / ".handa"
-  await HandaSessionService(root=str(root)).create_session(
-      app_name="handa",
-      user_id="user",
-      session_id="session-1",
-  )
-  context = FakeToolContext(HandaArtifactService(root=str(root)))
-
-  saved = await agents.save_config(
-      name="pinned_agent",
-      description="Pins a model.",
-      tools=["files_read"],
-      skills=[],
-      instruction_sections=["identity"],
-      tool_context=context,
-      model_config_id="gemini-3.1-pro-low",
-  )
-  loaded = await agents.read_config(name="pinned_agent", tool_context=context)
-
-  assert saved["model_config_id"] == "gemini-3.1-pro-low"
-  assert loaded["config"]["model_config_id"] == "gemini-3.1-pro-low"
-
-  with pytest.raises(ValueError, match="Unknown model_config_id"):
-    await agents.save_config(
-        name="bad_model_agent",
-        description="Bad model.",
-        tools=["files_read"],
-        skills=[],
-        instruction_sections=["identity"],
-        tool_context=context,
-        model_config_id="gpt-4o",
-    )
 
 
 async def _assert_agents_config_tool_versions_session_artifacts(tmp_path):
@@ -478,11 +439,11 @@ def test_run_agent_tool_creates_agent_task(tmp_path, monkeypatch):
   asyncio.run(_assert_run_agent_tool_creates_agent_task(tmp_path, monkeypatch))
 
 
-def test_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch):
-  asyncio.run(_assert_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch))
+def test_agent_start_run_inherits_session_model(tmp_path, monkeypatch):
+  asyncio.run(_assert_agent_start_run_inherits_session_model(tmp_path, monkeypatch))
 
 
-async def _assert_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch):
+async def _assert_agent_start_run_inherits_session_model(tmp_path, monkeypatch):
   root = tmp_path / ".handa"
   monkeypatch.setenv("HANDA_PROJECT_ROOT", str(tmp_path))
   monkeypatch.setenv("HANDA_STORAGE_ROOT", str(root))
@@ -493,7 +454,6 @@ async def _assert_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch
   )
   service = HandaArtifactService(root=str(root))
   context = FakeToolContext(service)
-  # The session model differs from any config-pinned model below.
   context.session.state["handa:model_config_id"] = "gemini-3.5-flash-high"
 
   captured: dict[str, object] = {}
@@ -510,27 +470,29 @@ async def _assert_agent_start_run_resolves_model_config_id(tmp_path, monkeypatch
   # start_agent_run_task spawns a worker subprocess; capture its kwargs instead.
   monkeypatch.setattr(agent_tools, "start_agent_run_task", fake_start_agent_run_task)
 
+  # A stale `model_config_id` key on the artifact is ignored; the run always
+  # inherits the session model.
   await service.save_artifact(
       app_name="handa",
       user_id="user",
       session_id="session-1",
-      filename="pinned_agent.agent.json",
+      filename="stale_model_agent.agent.json",
       artifact=types.Part.from_text(
-          text='{"name":"pinned_agent","model_config_id":"gemini-3.1-pro-low"}'
+          text='{"name":"stale_model_agent","model_config_id":"gemini-3.1-pro-low"}'
       ),
   )
-  await agents.start_run(name="pinned_agent", prompt="Go.", tool_context=context)
-  assert captured["model_config_id"] == "gemini-3.1-pro-low"
+  await agents.start_run(name="stale_model_agent", prompt="Go.", tool_context=context)
+  assert captured["model_config_id"] == "gemini-3.5-flash-high"
 
   captured.clear()
   await service.save_artifact(
       app_name="handa",
       user_id="user",
       session_id="session-1",
-      filename="unpinned_agent.agent.json",
-      artifact=types.Part.from_text(text='{"name":"unpinned_agent"}'),
+      filename="plain_agent.agent.json",
+      artifact=types.Part.from_text(text='{"name":"plain_agent"}'),
   )
-  await agents.start_run(name="unpinned_agent", prompt="Go.", tool_context=context)
+  await agents.start_run(name="plain_agent", prompt="Go.", tool_context=context)
   assert captured["model_config_id"] == "gemini-3.5-flash-high"
 
 

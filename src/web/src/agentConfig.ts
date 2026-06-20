@@ -3,7 +3,6 @@ import type { BackendAgentCatalog } from './api/types'
 export interface ParsedAgentConfig {
   name: string
   description: string
-  modelConfigId: string | null
   tools: string[]
   skills: string[]
   subagents: string[]
@@ -69,7 +68,6 @@ export function parseAgentConfig(content: string): ParsedAgentConfig | null {
   return {
     name: record.name,
     description: typeof record.description === 'string' ? record.description : '',
-    modelConfigId: firstNonEmptyString(record.model_config_id, record.model),
     tools,
     skills,
     subagents,
@@ -193,11 +191,4 @@ function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null
   if (!value.every((item): item is string => typeof item === 'string')) return null
   return value
-}
-
-function firstNonEmptyString(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value
-  }
-  return null
 }

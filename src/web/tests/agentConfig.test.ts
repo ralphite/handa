@@ -59,7 +59,6 @@ describe('parseAgentConfig', () => {
     expect(parsed).toEqual({
       name: 'analyst',
       description: 'Analyzes things.',
-      modelConfigId: null,
       tools: ['files_read'],
       skills: ['qa'],
       subagents: [],
@@ -77,20 +76,16 @@ describe('parseAgentConfig', () => {
     expect(parseAgentConfig(JSON.stringify({ name: 'a', subagents: 'browser' }))).toBeNull()
   })
 
-  it('defaults missing optional fields and reads legacy model fields', () => {
-    const parsed = parseAgentConfig(JSON.stringify({ name: 'orca', model_config_id: 'gemini-3.1-pro-high' }))
+  it('defaults missing optional fields', () => {
+    const parsed = parseAgentConfig(JSON.stringify({ name: 'orca' }))
     expect(parsed).toMatchObject({
       name: 'orca',
       description: '',
-      modelConfigId: 'gemini-3.1-pro-high',
       tools: [],
       skills: [],
       instructionSections: [],
       customInstruction: null,
     })
-    expect(parseAgentConfig(JSON.stringify({ name: 'legacy', model: 'gemini-3.1-flash' }))?.modelConfigId).toBe(
-      'gemini-3.1-flash',
-    )
   })
 
   it('treats blank custom_instruction as absent', () => {

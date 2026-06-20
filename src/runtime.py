@@ -16,7 +16,6 @@ import uuid
 
 from .agent_runtime import get_agent_definition
 from .config import AgentConfig
-from .config import resolve_agent_config_model_config_id
 from .contract.hooks import normalize_hooks
 from .contract.product import hooks_for_agent
 from .model_configs import validate_model_config_id
@@ -890,12 +889,10 @@ def start_system_agent_run_task(
     suppress_task_notification: bool = False,
 ) -> dict[str, Any]:
   agent_config = AgentConfig.model_validate(config)
-  resolved_model_config_id = resolve_agent_config_model_config_id(
-      agent_config,
-      inherited_model_config_id=model_config_id or _session_model_config_id(session_id),
+  resolved_model_config_id = validate_model_config_id(
+      model_config_id or _session_model_config_id(session_id)
   )
   normalized_config = agent_config.model_dump(exclude_none=True)
-  normalized_config["model_config_id"] = resolved_model_config_id
 
   ensure_task_dirs(session_id)
   config_name = str(normalized_config.get("name") or "").strip()

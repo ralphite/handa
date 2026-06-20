@@ -154,10 +154,5 @@ def validate_model_config_id(model_config_id: str | None) -> str:
   return normalized
 
 
-def is_supported_model_config_id(model_config_id: str | None) -> bool:
-  """Whether the value names a supported model config, without raising."""
-  return bool(model_config_id) and model_config_id.strip() in MODEL_CONFIGS
-
-
 def resolve_model_config(model_config_id: str | None) -> RuntimeModelConfig:
   return MODEL_CONFIGS[validate_model_config_id(model_config_id)].runtime

@@ -13,8 +13,6 @@ from ...agent_runtime import validate_agent_id
 from ...config import AgentConfig
 from ...config import agent_config_artifact_filename
 from ...config import agent_config_warnings
-from ...config import resolve_generated_agent_model_config_id
-from ...model_configs import validate_model_config_id
 from ...progress import PROGRESS_STATE_KEY
 from ...progress import replace_progress_items
 from ...runner import APP_NAME
@@ -336,7 +334,6 @@ def _agent_tools(
       skills: list[str],
       instruction_sections: list[str],
       custom_instruction: str | None = None,
-      model_config_id: str | None = None,
   ) -> dict[str, Any]:
     """Save an agent config artifact.
 
@@ -346,12 +343,9 @@ def _agent_tools(
     agent_config, subagents, html_output, communication. Use `custom_instruction`
     for extra
     free-form instructions; it is appended after the selected built-in sections.
-    `model_config_id` is optional: set it to a supported model config id to pin
-    this agent's model; omit it to inherit the model selected in the session.
+    The saved agent always inherits the model selected in the session at run
+    time.
     """
-    normalized_model_config_id = None
-    if model_config_id and model_config_id.strip():
-      normalized_model_config_id = validate_model_config_id(model_config_id)
     config = AgentConfig(
         name=name,
         description=description,
@@ -359,7 +353,6 @@ def _agent_tools(
         skills=skills,
         instruction_sections=instruction_sections,
         custom_instruction=custom_instruction,
-        model_config_id=normalized_model_config_id,
     )
     _reject_unknown_tools(config.tools)
     warnings = agent_config_warnings(config)
@@ -382,7 +375,7 @@ def _agent_tools(
         "stored_filename": artifact_stored_filename(filename, version),
         "version": version,
         "display_version": version + 1,
-        "model_config_id": normalized_model_config_id or ctx.model_config_id,
+        "model_config_id": ctx.model_config_id,
         "warnings": warnings,
     }
 
@@ -447,12 +440,8 @@ def _agent_tools(
         context=context,
         summary=summary,
         config_version=version,
-        # The config's model wins when it names a supported model config;
-        # otherwise the run inherits the session-selected model.
-        model_config_id=resolve_generated_agent_model_config_id(
-            config,
-            inherited_model_config_id=ctx.model_config_id,
-        ),
+        # Agent Config runs inherit the session-selected model.
+        model_config_id=ctx.model_config_id,
         session_id=ctx.session_id,
         user_id=ctx.user_id,
         app_name=ctx.app_name,

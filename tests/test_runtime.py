@@ -622,13 +622,13 @@ def test_system_agent_run_task_creates_immutable_config_child_session(
   task = start_system_agent_run_task(
       config={
           "name": "system_verifier",
-          "model_config_id": "gemini-3.1-pro-low",
           "description": "System verifier.",
           "tools": [],
           "skills": [],
           "instruction_sections": [],
       },
       prompt="Verify.",
+      model_config_id="gemini-3.1-pro-low",
       session_id=session_id,
       user_id="user",
       app_name="handa",
@@ -640,8 +640,9 @@ def test_system_agent_run_task_creates_immutable_config_child_session(
   assert task["kind"] == "system_agent_run"
   assert task["config_name"] == "system_verifier"
   assert task["config"]["name"] == "system_verifier"
+  # The run's model travels on the task; the immutable config no longer pins one.
   assert task["model_config_id"] == "gemini-3.1-pro-low"
-  assert task["config"]["model_config_id"] == "gemini-3.1-pro-low"
+  assert "model_config_id" not in task["config"]
   assert task["save_parent_summary"] is False
   assert task["worker_pid"] == 12345
   assert child is not None
@@ -660,9 +661,9 @@ def test_system_agent_run_task_rejects_unknown_model_config_id(tmp_path, monkeyp
     start_system_agent_run_task(
         config={
             "name": "research_agent",
-            "model_config_id": "gpt-4o",
         },
         prompt="Research.",
+        model_config_id="gpt-4o",
         session_id=session_id,
         user_id="user",
         app_name="handa",

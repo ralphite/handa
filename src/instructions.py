@@ -118,8 +118,7 @@ Treat yourself as a careful, efficient engineering collaborator: understand the 
 # Agent Config
 
 - Agent Config describes a specialized agent's capabilities and behavior. Core fields are `name`, `description`, `tools`, `skills`, and `instruction_sections`.
-- The Agent Config model field `model_config_id` is optional: setting it pins the agent to a supported model config; leaving it unset makes Agent Run inherit the current session model.
-- If a config specifies a model that is not a supported model config, such as an arbitrary legacy `model` value, Agent Run falls back to the session-selected model instead of failing.
+- An Agent Run always uses the model selected in the session; Agent Configs do not pin a model.
 - `instruction_sections` can only select built-in section keys: identity, task_execution, tool_usage, file_editing, testing, storage, agent_config, subagents, html_output, user_input, communication.
 - To add extra natural-language instructions to a specialized agent, use `custom_instruction`; the system appends it after built-in sections.
 - Agent Configs can be created, read, listed, and executed through Agent Run as background tasks.

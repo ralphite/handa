@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Bot, ChevronDown, ChevronRight, Cpu, FileCode2, ListOrdered, Sparkles, Workflow, Wrench } from '@lucide/vue'
+import { Bot, ChevronDown, ChevronRight, FileCode2, ListOrdered, Sparkles, Workflow, Wrench } from '@lucide/vue'
 import { MarkdownRender } from 'markstream-vue'
 import 'markstream-vue/index.css'
 import HighlightCodeBlock from './HighlightCodeBlock.vue'
@@ -39,13 +39,6 @@ const sections = computed(() =>
 const skills = computed(() => resolveSkills(props.config.skills, props.catalog))
 const subagents = computed(() => resolveSubagents(props.config.subagents, props.catalog))
 const formattedJson = computed(() => formatAgentConfigJson(props.rawContent))
-
-const modelLabel = computed(() => {
-  const id = props.config.modelConfigId
-  if (!id) return 'Inherits the model selected in the session'
-  const option = props.catalog?.model_configs.find((item) => item.id === id)
-  return option ? `${option.label} · ${id}` : id
-})
 
 const instructionCount = computed(() => {
   const base = `${props.config.instructionSections.length} section${props.config.instructionSections.length === 1 ? '' : 's'}`
@@ -95,9 +88,8 @@ function tooltipForTool(definition: string | null, known: boolean) {
           <span class="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[12px] text-[color:var(--text-muted)]">agent config</span>
         </div>
         <p v-if="config.description" class="mt-1.5 text-[14px] leading-6 text-[color:var(--text-secondary)]">{{ config.description }}</p>
-        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[color:var(--text-faint)]">
-          <span class="inline-flex items-center gap-1.5"><Cpu :size="13" />{{ modelLabel }}</span>
-          <span v-if="sourceLabel" class="inline-flex items-center gap-1.5"><FileCode2 :size="13" />{{ sourceLabel }}</span>
+        <div v-if="sourceLabel" class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[color:var(--text-faint)]">
+          <span class="inline-flex items-center gap-1.5"><FileCode2 :size="13" />{{ sourceLabel }}</span>
         </div>
       </div>
       <div class="flex shrink-0 gap-1">
