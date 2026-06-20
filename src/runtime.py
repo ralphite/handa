@@ -802,6 +802,75 @@ def _launch_agent_run_worker(
   return task
 
 
+def _start_child_run_task(
+    *,
+    kind: str,
+    summary: str,
+    task_fields: dict[str, Any],
+    event_message: str,
+    event_payload: dict[str, Any],
+    child_state: dict[str, Any],
+    session_id: str,
+    user_id: str,
+    app_name: str,
+) -> dict[str, Any]:
+  """Create a parent task plus its child session and launch the run worker.
+
+  Shared scaffolding for every kind of agent-as-tool run (`agent_run`,
+  `system_agent_run`, `run_agent`). Callers supply only what differs: the task
+  `kind`, the kind-specific task fields, the `task.created` event message and
+  its payload extras, and the child-session state extras. The invariants — task
+  id allocation, child-session allocation, the `_base_run_task` skeleton, the
+  shared event payload keys (`kind`/`agent_runtime`/`child_session_id`), the
+  shared child-state keys (`session_kind`/`parent_session_id`/`parent_task_id`/
+  `agent_runtime`), and worker launch — live here so they cannot drift apart
+  across the three callers.
+  """
+  ensure_task_dirs(session_id)
+  task_id = f"task_{uuid.uuid4().hex[:10]}"
+  child_session_id = _allocate_child_session_id(session_id)
+  task = {
+      **_base_run_task(
+          task_id=task_id,
+          session_id=session_id,
+          kind=kind,
+          child_session_id=child_session_id,
+          user_id=user_id,
+          summary=summary,
+      ),
+      **task_fields,
+  }
+  save_task(task)
+  append_task_event(
+      "task.created",
+      event_message.format(task_id=task_id),
+      session_id=session_id,
+      task_id=task_id,
+      payload={
+          "kind": kind,
+          "agent_runtime": task["agent_runtime"],
+          "child_session_id": child_session_id,
+          **event_payload,
+      },
+  )
+
+  full_child_state = {
+      "handa:session_kind": f"{kind}_child",
+      "handa:parent_session_id": session_id,
+      "handa:parent_task_id": task_id,
+      "handa:agent_runtime": task["agent_runtime"],
+      **child_state,
+  }
+  HandaSessionService(root=str(get_storage_root()))._create_session_sync(
+      app_name,
+      user_id,
+      full_child_state,
+      child_session_id,
+  )
+
+  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
+
+
 def start_agent_run_task(
     config_name: str,
     prompt: str,
@@ -819,61 +888,35 @@ def start_agent_run_task(
   resolved_model_config_id = validate_model_config_id(
       model_config_id or _session_model_config_id(session_id)
   )
-  ensure_task_dirs(session_id)
-  task_id = f"task_{uuid.uuid4().hex[:10]}"
-  child_session_id = _allocate_child_session_id(session_id)
-  task = {
-      **_base_run_task(
-          task_id=task_id,
-          session_id=session_id,
-          kind="agent_run",
-          child_session_id=child_session_id,
-          user_id=user_id,
-          summary=summary or f"Run agent config {config_name}",
-      ),
-      "config_name": config_name,
-      "config_version": config_version,
-      "model_config_id": resolved_model_config_id,
-      "prompt": prompt,
-      "context": context or "",
-      "depth": depth,
-      "suppress_task_notification": bool(suppress_task_notification),
-  }
-  save_task(task)
-  append_task_event(
-      "task.created",
-      f"Agent run {task_id} created",
-      session_id=session_id,
-      task_id=task_id,
-      payload={
-          "kind": "agent_run",
+  return _start_child_run_task(
+      kind="agent_run",
+      summary=summary or f"Run agent config {config_name}",
+      task_fields={
           "config_name": config_name,
-          "agent_runtime": task["agent_runtime"],
+          "config_version": config_version,
           "model_config_id": resolved_model_config_id,
-          "child_session_id": child_session_id,
+          "prompt": prompt,
+          "context": context or "",
+          "depth": depth,
+          "suppress_task_notification": bool(suppress_task_notification),
+      },
+      event_message="Agent run {task_id} created",
+      event_payload={
+          "config_name": config_name,
+          "model_config_id": resolved_model_config_id,
           "depth": depth,
       },
+      child_state={
+          "handa:agent_run_config_name": config_name,
+          "handa:agent_run_config_version": config_version,
+          "handa:agent_run_prompt": prompt,
+          "handa:model_config_id": resolved_model_config_id,
+          "handa:agent_run_depth": depth + 1,
+      },
+      session_id=session_id,
+      user_id=user_id,
+      app_name=app_name,
   )
-
-  child_state = {
-      "handa:session_kind": "agent_run_child",
-      "handa:parent_session_id": session_id,
-      "handa:parent_task_id": task_id,
-      "handa:agent_run_config_name": config_name,
-      "handa:agent_run_config_version": config_version,
-      "handa:agent_runtime": task["agent_runtime"],
-      "handa:agent_run_prompt": prompt,
-      "handa:model_config_id": resolved_model_config_id,
-      "handa:agent_run_depth": depth + 1,
-  }
-  HandaSessionService(root=str(get_storage_root()))._create_session_sync(
-      app_name,
-      user_id,
-      child_state,
-      child_session_id,
-  )
-
-  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def start_system_agent_run_task(
@@ -893,65 +936,37 @@ def start_system_agent_run_task(
       model_config_id or _session_model_config_id(session_id)
   )
   normalized_config = agent_config.model_dump(exclude_none=True)
-
-  ensure_task_dirs(session_id)
   config_name = str(normalized_config.get("name") or "").strip()
   if not config_name:
     raise ValueError("System agent config must include a name.")
 
-  task_id = f"task_{uuid.uuid4().hex[:10]}"
-  child_session_id = _allocate_child_session_id(session_id)
-
-  task = {
-      **_base_run_task(
-          task_id=task_id,
-          session_id=session_id,
-          kind="system_agent_run",
-          child_session_id=child_session_id,
-          user_id=user_id,
-          summary=summary or f"Run system agent {config_name}",
-      ),
-      "config_name": config_name,
-      "config": normalized_config,
-      "model_config_id": resolved_model_config_id,
-      "prompt": prompt,
-      "context": context or "",
-      "save_parent_summary": False,
-      "suppress_task_notification": bool(suppress_task_notification),
-      "hooks": normalize_hooks(normalized_config.get("hooks") or []),
-  }
-  save_task(task)
-  append_task_event(
-      "task.created",
-      f"System agent run {task_id} created",
-      session_id=session_id,
-      task_id=task_id,
-      payload={
-          "kind": "system_agent_run",
+  return _start_child_run_task(
+      kind="system_agent_run",
+      summary=summary or f"Run system agent {config_name}",
+      task_fields={
           "config_name": config_name,
-          "agent_runtime": task["agent_runtime"],
+          "config": normalized_config,
           "model_config_id": resolved_model_config_id,
-          "child_session_id": child_session_id,
+          "prompt": prompt,
+          "context": context or "",
+          "save_parent_summary": False,
+          "suppress_task_notification": bool(suppress_task_notification),
+          "hooks": normalize_hooks(normalized_config.get("hooks") or []),
       },
+      event_message="System agent run {task_id} created",
+      event_payload={
+          "config_name": config_name,
+          "model_config_id": resolved_model_config_id,
+      },
+      child_state={
+          "handa:system_agent_config_name": config_name,
+          "handa:system_agent_run_prompt": prompt,
+          "handa:model_config_id": resolved_model_config_id,
+      },
+      session_id=session_id,
+      user_id=user_id,
+      app_name=app_name,
   )
-
-  child_state = {
-      "handa:session_kind": "system_agent_run_child",
-      "handa:parent_session_id": session_id,
-      "handa:parent_task_id": task_id,
-      "handa:system_agent_config_name": config_name,
-      "handa:agent_runtime": task["agent_runtime"],
-      "handa:system_agent_run_prompt": prompt,
-      "handa:model_config_id": resolved_model_config_id,
-  }
-  HandaSessionService(root=str(get_storage_root()))._create_session_sync(
-      app_name,
-      user_id,
-      child_state,
-      child_session_id,
-  )
-
-  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def start_run_agent_task(
@@ -965,57 +980,31 @@ def start_run_agent_task(
     app_name: str,
     depth: int = 0,
 ) -> dict[str, Any]:
-  ensure_task_dirs(session_id)
   get_agent_definition(agent_id)  # validate the agent id exists
-  task_id = f"task_{uuid.uuid4().hex[:10]}"
-  child_session_id = _allocate_child_session_id(session_id)
-  task = {
-      **_base_run_task(
-          task_id=task_id,
-          session_id=session_id,
-          kind="run_agent",
-          child_session_id=child_session_id,
-          user_id=user_id,
-          summary=summary or f"Run agent {agent_id}",
-      ),
-      "agent_id": agent_id,
-      "prompt": prompt,
-      "context": context or "",
-      "depth": depth,
-      "hooks": hooks_for_agent(agent_id),
-  }
-  save_task(task)
-  append_task_event(
-      "task.created",
-      f"Run agent {task_id} created",
-      session_id=session_id,
-      task_id=task_id,
-      payload={
-          "kind": "run_agent",
+  return _start_child_run_task(
+      kind="run_agent",
+      summary=summary or f"Run agent {agent_id}",
+      task_fields={
           "agent_id": agent_id,
-          "agent_runtime": task["agent_runtime"],
-          "child_session_id": child_session_id,
+          "prompt": prompt,
+          "context": context or "",
+          "depth": depth,
+          "hooks": hooks_for_agent(agent_id),
+      },
+      event_message="Run agent {task_id} created",
+      event_payload={
+          "agent_id": agent_id,
           "depth": depth,
       },
+      child_state={
+          "handa:target_agent_id": agent_id,
+          "handa:run_agent_prompt": prompt,
+          "handa:agent_run_depth": depth + 1,
+      },
+      session_id=session_id,
+      user_id=user_id,
+      app_name=app_name,
   )
-
-  child_state = {
-      "handa:session_kind": "run_agent_child",
-      "handa:parent_session_id": session_id,
-      "handa:parent_task_id": task_id,
-      "handa:target_agent_id": agent_id,
-      "handa:agent_runtime": task["agent_runtime"],
-      "handa:run_agent_prompt": prompt,
-      "handa:agent_run_depth": depth + 1,
-  }
-  HandaSessionService(root=str(get_storage_root()))._create_session_sync(
-      app_name,
-      user_id,
-      child_state,
-      child_session_id,
-  )
-
-  return _launch_agent_run_worker(task, session_id=session_id, task_id=task_id)
 
 
 def get_task_status(
