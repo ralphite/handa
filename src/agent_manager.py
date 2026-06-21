@@ -105,6 +105,9 @@ class Run(BaseModel):
   pid: int | None = None
   detached: bool = False
   error: str | None = None
+  # Set when this run is one attempt of a goal loop (see agent_goal.py).
+  goal_id: str | None = None
+  attempt: int | None = None
   created_at: str = ""
   created_ts: float = 0.0
   started_at: str | None = None
@@ -579,10 +582,20 @@ def _read_prompt(prompt_arg: str | None) -> str:
 
 
 def _cmd_run(store: Store, args: argparse.Namespace) -> int:
+  prompt = _read_prompt(args.prompt)
+  # A `/goal …` prompt promotes this one-shot run into a goal loop, mirroring
+  # the web composer's `/goal` slash command.
+  from . import agent_goal
+
+  goal_exit = agent_goal.maybe_handle_goal_slash(
+      store, args.agent, prompt, as_json=args.json
+  )
+  if goal_exit is not None:
+    return goal_exit
   run = create_run(
       store,
       args.agent,
-      prompt=_read_prompt(args.prompt),
+      prompt=prompt,
       label=args.label or "",
       env=_parse_env_pairs(args.env),
       cwd=args.cwd,
@@ -790,6 +803,12 @@ def build_parser() -> argparse.ArgumentParser:
   worker = sub.add_parser("_worker")  # hidden: detached background executor
   worker.add_argument("run")
   worker.set_defaults(func=_cmd_worker)
+
+  # Goal-driven loops live in a sibling module to keep this file focused; the
+  # import is local to avoid an import cycle (agent_goal imports this module).
+  from . import agent_goal
+
+  agent_goal.register(sub)
 
   return parser
 
