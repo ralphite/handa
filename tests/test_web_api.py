@@ -2666,7 +2666,7 @@ def test_execute_turn_runs_native_orca_agent(tmp_path, monkeypatch):
   ]
   call_count: list[int] = []
 
-  async def fake_generate(*, client, model, contents, config):
+  async def fake_generate(*, client, model, contents, config, on_retry=None):
     call_count.append(1)
     content = scripted[len(call_count) - 1]
     return SimpleNamespace(candidates=[SimpleNamespace(content=content)])

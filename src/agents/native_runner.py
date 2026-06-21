@@ -26,6 +26,8 @@ from ..model_configs import resolve_model_config
 from ..model_configs import validate_model_config_id
 from ..project_instructions import append_project_agents_instruction
 from ..run_outcome import RunOutcome
+from ..run_retry import is_rate_limit_run_error
+from ..run_retry import is_retryable_run_error
 from ..runner import DEFAULT_USER_ID
 from ..runtime import project_context
 from ..storage import HandaSessionService
@@ -43,13 +45,23 @@ if "GOOGLE_API_KEY" not in os.environ and "GEMINI_API_KEY" in os.environ:
 
 LOGGER = logging.getLogger("handa.native_runner")
 
-# The genai SDK retries on HTTP status codes (429/5xx) but not on transport
-# failures like a dropped/reset connection (httpx.ReadError/ConnectError) or a
-# ReadTimeout. Those are transient too, so retry the single model call here — at
-# the per-call layer, so a mid-turn drop is recovered without re-running the
+# Per-call model retry. The genai SDK retries 429/5xx a few times with short
+# backoff, but a sustained rate limit (common on the Gemini standard tier)
+# outlasts that and would otherwise fail the whole invocation. The SDK also
+# never retries transport failures — a dropped/reset connection
+# (httpx.ReadError/ConnectError) or a ReadTimeout. So we retry the single model
+# call here, at the per-call layer: a buffered generate_content either returns a
+# full response or raises, so retrying never duplicates streamed output or
+# re-runs tools, and a mid-turn failure is recovered without re-running the
 # whole invocation (which is forbidden once output has streamed this turn).
-MODEL_TRANSPORT_RETRY_ATTEMPTS = 3
-MODEL_TRANSPORT_RETRY_BASE_DELAY_SEC = 1.0
+#
+# Rate-limit errors retry indefinitely — they almost always clear once the
+# per-minute quota refills, so we keep waiting (capped at MODEL_RETRY_MAX_DELAY)
+# rather than failing the run. Other transient errors (5xx, transport) retry a
+# bounded number of times before surfacing, so a genuine outage still fails fast.
+MODEL_RETRY_BASE_DELAY_SEC = 1.0
+MODEL_RETRY_MAX_DELAY_SEC = 300.0  # cap a single backoff wait at 5 minutes
+MODEL_TRANSIENT_RETRY_ATTEMPTS = 6
 DEFAULT_NATIVE_MAX_OUTPUT_TOKENS = 8192
 CODE_AGENT_MAX_OUTPUT_TOKENS = 32768
 
@@ -57,6 +69,8 @@ AgentEventEmitter = Callable[[dict[str, Any]], Awaitable[None]]
 BuildSessionContext = Callable[..., Any]
 BuildToolset = Callable[[list[str], Any], Any]
 GenerateModelResponse = Callable[..., Awaitable[Any]]
+# Fired before each model-call retry sleep so callers can surface the wait.
+ModelRetryCallback = Callable[[int, float, Exception], Awaitable[None]]
 
 
 def make_native_agent_run(
@@ -241,6 +255,30 @@ async def run_native_agent(
         pending_rounds=None,
     )
 
+  async def _emit_model_retry(
+      attempt_no: int, delay_sec: float, exc: Exception
+  ) -> None:
+    rate_limited = is_rate_limit_run_error(exc)
+    reason = "was rate limited" if rate_limited else "hit a transient error"
+    await emit_event(
+        _event(
+            f"{event_prefix}.model_retry",
+            f"{display_name} {reason}; retrying in {delay_sec:.0f}s "
+            f"(attempt {attempt_no})",
+            {
+                "attempt": attempt_no,
+                "delay_sec": delay_sec,
+                "rate_limited": rate_limited,
+                "error": {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "code": getattr(exc, "code", None),
+                },
+            },
+            event_id_prefix=event_id_prefix,
+        )
+    )
+
   while True:
     model_config = base_config.model_copy(deep=True)
     model_config.tools = [genai_tool]
@@ -252,6 +290,7 @@ async def run_native_agent(
         model=runtime_model_config.model,
         contents=history,
         config=model_config,
+        on_retry=_emit_model_retry,
     )
     content = _response_content(response)
     calls = _function_calls(content)
@@ -561,31 +600,56 @@ async def generate_model_response(
     model: str,
     contents: list[types.Content],
     config: types.GenerateContentConfig,
+    on_retry: ModelRetryCallback | None = None,
 ) -> Any:
-  delay_sec = MODEL_TRANSPORT_RETRY_BASE_DELAY_SEC
-  for attempt_no in range(1, MODEL_TRANSPORT_RETRY_ATTEMPTS + 1):
+  """Issue one buffered model call, retrying transient failures in place.
+
+  Rate-limit errors (429 / RESOURCE_EXHAUSTED / quota) retry indefinitely with
+  exponential backoff capped at ``MODEL_RETRY_MAX_DELAY_SEC`` — they nearly
+  always clear once the quota window refills, so the run waits rather than
+  failing. Other transient errors (5xx, dropped/reset connections, read
+  timeouts) retry up to ``MODEL_TRANSIENT_RETRY_ATTEMPTS`` times before
+  surfacing. Non-transient errors raise immediately. ``asyncio.CancelledError``
+  is a ``BaseException`` and so propagates past the ``except Exception`` guard,
+  keeping the run cancellable while it waits. ``on_retry`` (if given) is awaited
+  before each sleep so callers can surface the wait to the user.
+  """
+  delay_sec = MODEL_RETRY_BASE_DELAY_SEC
+  transient_attempts = 0
+  attempt_no = 0
+  while True:
+    attempt_no += 1
     try:
       return await client.aio.models.generate_content(
           model=model,
           contents=contents,
           config=config,
       )
-    except httpx.TransportError as exc:
-      if attempt_no >= MODEL_TRANSPORT_RETRY_ATTEMPTS:
+    except Exception as exc:  # noqa: BLE001 - re-raised below unless transient.
+      retryable = is_retryable_run_error(exc) or isinstance(
+          exc, httpx.TransportError
+      )
+      if not retryable:
         raise
+      rate_limited = is_rate_limit_run_error(exc)
+      if not rate_limited:
+        transient_attempts += 1
+        if transient_attempts >= MODEL_TRANSIENT_RETRY_ATTEMPTS:
+          raise
+      wait_sec = min(delay_sec, MODEL_RETRY_MAX_DELAY_SEC)
       LOGGER.warning(
-          "Retrying model call after transport error: attempt=%s "
-          "next_delay_sec=%s model=%s error=%s",
+          "Retrying model call after %s: attempt=%s next_delay_sec=%s "
+          "model=%s error=%s",
+          "rate limit" if rate_limited else "transient error",
           attempt_no,
-          delay_sec,
+          wait_sec,
           model,
           f"{type(exc).__name__}: {exc}",
       )
-      await asyncio.sleep(delay_sec)
-      delay_sec *= 2
-  raise AssertionError(  # pragma: no cover - loop returns or raises above.
-      "generate_model_response: unreachable"
-  )
+      if on_retry is not None:
+        await on_retry(attempt_no, wait_sec, exc)
+      await asyncio.sleep(wait_sec)
+      delay_sec = min(delay_sec * 2, MODEL_RETRY_MAX_DELAY_SEC)
 
 
 def _build_instruction(config: AgentConfig, project_root: Path) -> str:

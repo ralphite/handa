@@ -47,7 +47,7 @@ def test_orca_runs_react_tool_loop(tmp_path, monkeypatch):
     ]
     calls: list[dict] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
@@ -101,7 +101,7 @@ def test_orca_can_return_candidate_without_final_agent_text(tmp_path, monkeypatc
     monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       return _model_response(_text("Candidate answer."))
 
     monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
@@ -136,7 +136,7 @@ def test_orca_uses_code_agent_output_budget(tmp_path, monkeypatch):
 
     calls: list[types.GenerateContentConfig] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append(config)
       return _model_response(_text("Done."))
 
@@ -168,7 +168,7 @@ def test_orca_model_text_includes_finish_reason(tmp_path, monkeypatch):
     monkeypatch.setenv("HANDA_STORAGE_ROOT", str(tmp_path / ".handa"))
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       return _model_response(_text("Partial response."), finish_reason="MAX_TOKENS")
 
     monkeypatch.setattr(native_runner, "generate_model_response", fake_generate)
@@ -214,7 +214,7 @@ def test_orca_persists_history_across_turns(tmp_path, monkeypatch):
     scripted = [_text("First answer."), _text("Second answer.")]
     calls: list[list[types.Content]] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
@@ -264,7 +264,7 @@ def test_orca_reports_failed_tool_without_crashing(tmp_path, monkeypatch):
     ]
     calls: list[int] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append(1)
       return _model_response(scripted[len(calls) - 1])
 
@@ -311,7 +311,7 @@ def test_orca_continues_past_twenty_four_tool_rounds(tmp_path, monkeypatch):
     scripted.append(_text("Finished after many tool rounds."))
     calls: list[dict] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
@@ -395,7 +395,7 @@ def test_orca_pauses_on_request_user_input_and_resumes(tmp_path, monkeypatch):
     ]
     calls: list[list] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
@@ -470,7 +470,7 @@ def test_orca_returns_validation_error_without_pausing(tmp_path, monkeypatch):
     ]
     calls: list[list] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append(list(contents))
       return _model_response(scripted[len(calls) - 1])
 
@@ -517,7 +517,7 @@ def test_orca_excludes_user_input_tool_for_child_runs(tmp_path, monkeypatch):
 
     captured_config = {}
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       captured_config["config"] = config
       return _model_response(_text("Child finished."))
 

@@ -68,7 +68,7 @@ def test_browser_runs_native_tool_loop(tmp_path, monkeypatch):
     ]
     calls: list[dict] = []
 
-    async def fake_generate(*, client, model, contents, config):
+    async def fake_generate(*, client, model, contents, config, on_retry=None):
       calls.append({"contents": list(contents), "config": config})
       return _model_response(scripted[len(calls) - 1])
 
