@@ -21,6 +21,7 @@ export function useThemeSettings() {
   const foldedProjectIds = ref<string[]>([])
   const geminiApiKeySet = ref(false)
   const geminiApiKeyPreview = ref('')
+  const geminiApiKeySource = ref<'settings' | 'environment' | null>(null)
   const loadingTheme = ref(false)
   const themeError = ref('')
   const systemThemeMedia =
@@ -136,6 +137,7 @@ export function useThemeSettings() {
     foldedProjectIds.value = settings.folded_project_ids
     geminiApiKeySet.value = settings.gemini_api_key_set
     geminiApiKeyPreview.value = settings.gemini_api_key_preview
+    geminiApiKeySource.value = settings.gemini_api_key_source ?? null
   }
 
   function applyThemePreference(nextThemeId: string | null | undefined) {
@@ -157,6 +159,7 @@ export function useThemeSettings() {
     foldedProjectIds,
     geminiApiKeyPreview,
     geminiApiKeySet,
+    geminiApiKeySource,
     effectiveThemeMode,
     loadTheme,
     loadingTheme,

@@ -48,6 +48,8 @@ from ..session_bootstrap import generate_and_store_session_title as generate_and
 from ..session_bootstrap import seed_session_title
 from ..session_bootstrap import start_new_session_turn
 from ..title_generation import fallback_title
+from ..turn_spawn import GEMINI_API_KEY_REQUIRED_MESSAGE
+from ..turn_spawn import gemini_api_key
 
 
 router = APIRouter(prefix="/api/turns")
@@ -280,6 +282,8 @@ async def create_turn(
     )
   except ValueError as exc:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
+  if not gemini_api_key(ctx).get("api_key"):
+    raise HTTPException(status_code=400, detail=GEMINI_API_KEY_REQUIRED_MESSAGE)
   project = ctx.db.get_project(project_id)
   if project is None:
     raise HTTPException(status_code=404, detail="Project not found")

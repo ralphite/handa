@@ -267,6 +267,7 @@ export interface BackendSettings {
   folded_project_ids: string[]
   gemini_api_key_set: boolean
   gemini_api_key_preview: string
+  gemini_api_key_source?: 'settings' | 'environment' | null
 }
 
 export interface BackendSettingsUpdate {

@@ -88,6 +88,7 @@ const {
   foldedProjectIds,
   geminiApiKeyPreview,
   geminiApiKeySet,
+  geminiApiKeySource,
   loadTheme,
   loadingTheme,
   modelConfigId,
@@ -1073,6 +1074,7 @@ function writeDialogToUrl(dialog: RestorableDialog | '') {
       :theme-error="themeError"
       :gemini-api-key-set="geminiApiKeySet"
       :gemini-api-key-preview="geminiApiKeyPreview"
+      :gemini-api-key-source="geminiApiKeySource"
       :archived-projects="archivedProjects"
       :archived-session-count="archivedSessionCount"
       :archived-loading="loading"

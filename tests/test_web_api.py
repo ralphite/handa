@@ -35,6 +35,7 @@ from src.contract.goals import GOAL_STATE_KEY
 from turn_test_helpers import execute_turn
 from src.api.app import create_app
 from src.api.routes.turns import generate_and_store_session_title
+from src.api.turn_spawn import GEMINI_API_KEY_REQUIRED_MESSAGE
 from src.api.sqlite import WebDatabase
 
 
@@ -839,6 +840,43 @@ def test_web_api_settings_persist_theme_id(tmp_path, monkeypatch):
   assert system_fetched["theme_id"] == "system"
 
 
+def test_web_api_settings_reports_environment_gemini_key(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("GEMINI_API_KEY", "env-gemini-key")
+  monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+
+  app = create_app()
+  client = TestClient(app)
+
+  settings = client.get("/api/settings").json()
+
+  assert settings["gemini_api_key_set"] is True
+  assert settings["gemini_api_key_source"] == "environment"
+  assert settings["gemini_api_key_preview"] == ""
+
+
+def test_web_api_settings_saved_gemini_key_overrides_environment(
+    tmp_path,
+    monkeypatch,
+):
+  storage_root = tmp_path / ".handa"
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("GEMINI_API_KEY", "env-gemini-key")
+
+  app = create_app()
+  client = TestClient(app)
+
+  updated = client.patch(
+      "/api/settings",
+      json={"gemini_api_key": "saved-gemini-key"},
+  ).json()
+
+  assert updated["gemini_api_key_set"] is True
+  assert updated["gemini_api_key_source"] == "settings"
+  assert updated["gemini_api_key_preview"] == "-key"
+
+
 def test_web_api_settings_persist_folded_project_ids(tmp_path, monkeypatch):
   storage_root = tmp_path / ".handa"
   monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
@@ -1298,6 +1336,66 @@ def test_web_api_invocation_creation_persists_native_runtime(
   assert meta["agent_id"] == "orca"
   assert meta["agent_runtime"] == "native"
   assert "handa:agent_runtime" not in session.state
+
+
+def test_web_api_turn_worker_uses_environment_gemini_key(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.setenv("GEMINI_API_KEY", "terminal-gemini-key")
+  monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+  captured = {}
+
+  def fake_spawn(task, *, extra_env=None):
+    captured["extra_env"] = dict(extra_env or {})
+    return task
+
+  monkeypatch.setattr("src.contract.task_store.spawn_web_turn_worker", fake_spawn)
+
+  app = create_app()
+  client = TestClient(app)
+  project = client.post("/api/projects", json={"root_path": str(project)}).json()
+
+  response = client.post(
+      "/api/turns",
+      data={
+          "input_text": "hello",
+          "project_id": project["id"],
+      },
+  )
+
+  assert response.status_code == 200
+  assert captured["extra_env"]["GEMINI_API_KEY"] == "terminal-gemini-key"
+  assert captured["extra_env"]["GOOGLE_API_KEY"] == "terminal-gemini-key"
+
+
+def test_web_api_turn_creation_requires_gemini_key(tmp_path, monkeypatch):
+  storage_root = tmp_path / ".handa"
+  project = tmp_path / "project"
+  project.mkdir()
+  monkeypatch.setenv("HANDA_STORAGE_ROOT", str(storage_root))
+  monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+  monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+  monkeypatch.setattr(
+      "src.api.routes.turns.gemini_api_key",
+      lambda ctx: {"api_key": "", "source": ""},
+  )
+
+  app = create_app()
+  client = TestClient(app)
+  project = client.post("/api/projects", json={"root_path": str(project)}).json()
+
+  response = client.post(
+      "/api/turns",
+      data={
+          "input_text": "hello",
+          "project_id": project["id"],
+      },
+  )
+
+  assert response.status_code == 400
+  assert response.json()["detail"] == GEMINI_API_KEY_REQUIRED_MESSAGE
 
 
 def test_web_api_turn_creation_defaults_to_orca(tmp_path, monkeypatch):

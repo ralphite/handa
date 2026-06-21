@@ -359,6 +359,7 @@ class WebSettingsSummary(BaseModel):
   folded_project_ids: list[str] = Field(default_factory=list)
   gemini_api_key_set: bool = False
   gemini_api_key_preview: str = ""
+  gemini_api_key_source: Literal["settings", "environment"] | None = None
 
 
 class WebSettingsUpdateRequest(BaseModel):

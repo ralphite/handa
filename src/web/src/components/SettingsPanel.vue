@@ -21,6 +21,7 @@ const props = defineProps<{
   initialSection?: SettingsSection
   geminiApiKeySet?: boolean
   geminiApiKeyPreview?: string
+  geminiApiKeySource?: 'settings' | 'environment' | null
   archivedProjects?: ProjectNavItem[]
   archivedSessionCount?: number
   archivedLoading?: boolean
@@ -228,7 +229,8 @@ watch(
                 <span class="grid h-5 w-5 place-items-center rounded-full bg-[var(--accent)] text-[color:var(--accent-contrast)]">
                   <Check :size="13" />
                 </span>
-                <span>Key set ending in <span class="font-mono text-[color:var(--text-primary)]">{{ geminiApiKeyPreview }}</span></span>
+                <span v-if="geminiApiKeySource === 'environment'">Using key from environment</span>
+                <span v-else>Key set ending in <span class="font-mono text-[color:var(--text-primary)]">{{ geminiApiKeyPreview }}</span></span>
               </div>
               <p v-else class="text-[13px] text-[color:var(--text-muted)]">No key configured.</p>
 
@@ -257,7 +259,7 @@ watch(
                   Save key
                 </button>
                 <button
-                  v-if="geminiApiKeySet"
+                  v-if="geminiApiKeySource === 'settings'"
                   class="rounded-lg border border-[color:var(--border-subtle)] px-3 py-1.5 text-[13px] font-medium text-[color:var(--text-secondary)] transition hover:bg-[var(--surface-hover)]"
                   type="button"
                   @click="clearGeminiApiKey"

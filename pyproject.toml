@@ -1,6 +1,6 @@
 [project]
 name = "handa-agent"
-version = "0.1.1"
+version = "0.1.2"
 description = "HANDA native agent MVP"
 requires-python = ">=3.11"
 dependencies = [

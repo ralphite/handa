@@ -11,6 +11,7 @@ from ...contract.product import validate_model_config_id
 from ..context import get_context
 from ..schemas import WebSettingsSummary
 from ..schemas import WebSettingsUpdateRequest
+from ..turn_spawn import gemini_api_key
 
 
 router = APIRouter(prefix="/api/settings")
@@ -77,7 +78,9 @@ def _web_settings_summary(request: Request) -> dict:
   settings = ctx.db.get_web_settings(user_id=ctx.settings.user_id)
   settings["theme_id"] = _resolve_theme_id(settings.get("theme_id"))
   raw_gemini_api_key = (settings.pop("gemini_api_key", "") or "").strip()
-  settings["gemini_api_key_set"] = bool(raw_gemini_api_key)
+  key_status = gemini_api_key(ctx)
+  settings["gemini_api_key_set"] = bool(key_status["api_key"])
+  settings["gemini_api_key_source"] = key_status["source"] or None
   settings["gemini_api_key_preview"] = (
       raw_gemini_api_key[-4:] if raw_gemini_api_key else ""
   )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from ..contract import task_store
@@ -11,6 +12,12 @@ from ..contract.task_store import create_web_turn_task
 from ..contract.task_store import now_iso
 from ..contract.task_store import resume_web_turn_task
 from .context import WebApiContext
+
+
+GEMINI_API_KEY_REQUIRED_MESSAGE = (
+    "Gemini API key required. Save one in Settings or start Handa with "
+    "GEMINI_API_KEY or GOOGLE_API_KEY."
+)
 
 
 def spawn_turn_worker(ctx: WebApiContext, turn_id: str) -> None:
@@ -42,6 +49,14 @@ def create_turn_run_record(ctx: WebApiContext, turn_id: str) -> dict[str, Any] |
   project = ctx.db.get_project(project_id) if project_id else None
   if project is None:
     _fail_before_spawn(ctx, turn_id, "ProjectNotFound", "Project not found")
+    return None
+  if not gemini_api_key(ctx).get("api_key"):
+    _fail_before_spawn(
+        ctx,
+        turn_id,
+        "MissingGeminiApiKey",
+        GEMINI_API_KEY_REQUIRED_MESSAGE,
+    )
     return None
 
   raw_agent_id = str(session.get("agent_id") or DEFAULT_WEB_AGENT_ID)
@@ -76,6 +91,14 @@ def respawn_turn_worker_for_resume(
   turn = ctx.db.get_turn(turn_id)
   if turn is None:
     raise KeyError(f"Turn not found: {turn_id}")
+  if not gemini_api_key(ctx).get("api_key"):
+    _fail_before_spawn(
+        ctx,
+        turn_id,
+        "MissingGeminiApiKey",
+        GEMINI_API_KEY_REQUIRED_MESSAGE,
+    )
+    return
   resume_web_turn_task(
       session_id=str(turn["session_id"]),
       turn_id=turn_id,
@@ -85,13 +108,25 @@ def respawn_turn_worker_for_resume(
 
 
 def _worker_env(ctx: WebApiContext) -> dict[str, str]:
-  settings = ctx.db.get_web_settings(user_id=ctx.settings.user_id)
+  api_key = gemini_api_key(ctx)["api_key"]
   env: dict[str, str] = {}
-  api_key = str(settings.get("gemini_api_key") or "").strip()
   if api_key:
     env["GOOGLE_API_KEY"] = api_key
     env["GEMINI_API_KEY"] = api_key
   return env
+
+
+def gemini_api_key(ctx: WebApiContext) -> dict[str, str]:
+  settings = ctx.db.get_web_settings(user_id=ctx.settings.user_id)
+  configured = str(settings.get("gemini_api_key") or "").strip()
+  if configured:
+    return {"api_key": configured, "source": "settings"}
+  env_key = str(
+      os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+  ).strip()
+  if env_key:
+    return {"api_key": env_key, "source": "environment"}
+  return {"api_key": "", "source": ""}
 
 
 def _streaming_enabled(ctx: WebApiContext) -> bool:
